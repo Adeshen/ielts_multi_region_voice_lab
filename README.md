@@ -11,8 +11,12 @@
 - 历史元数据保存在本地 `data/history.json`。
 - 火山引擎凭证只放在 `.env`，不会暴露给前端页面。
 
-https://console.volcengine.com/speech/app
+## 案例演示
 
+项目包含一个演示视频，用于说明这个网页的实际使用流程：
+
+- 演示文件：[`media/example_multi_region.mp4`](media/example_multi_region.mp4)
+- 演示内容：输入 IELTS 英文句子，选择多个英语地区音色，生成音频并在网页中播放对比。
 
 ## 快速启动
 
@@ -89,6 +93,7 @@ PORT=3000
 
 ## 参考文档
 
+- 火山引擎语音控制台：<https://console.volcengine.com/speech/app>
 - 火山引擎音色列表：<https://www.volcengine.com/docs/6561/97465?lang=zh>
 - 火山引擎 TTS 接入文档：<https://www.volcengine.com/docs/6561/1719100?lang=zh>
 - 火山引擎鉴权/接口相关文档：<https://www.volcengine.com/docs/6561/1359370?lang=zh>
@@ -109,6 +114,8 @@ PORT=3000
 ├── data/
 │   ├── audio/          # 本地生成的 MP3 音频
 │   └── history.json    # 历史记录
+├── media/
+│   └── example_multi_region.mp4  # 案例演示视频
 ├── server.js           # Express 服务入口
 ├── package.json
 ├── .env.example
