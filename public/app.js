@@ -11,11 +11,17 @@ const clearHistoryButton = document.querySelector("#clear-history");
 const historyPrevButton = document.querySelector("#history-prev");
 const historyNextButton = document.querySelector("#history-next");
 const historyPageStatus = document.querySelector("#history-page-status");
+const historySearchInput = document.querySelector("#history-search");
+const historyStartDateInput = document.querySelector("#history-start-date");
+const historyEndDateInput = document.querySelector("#history-end-date");
+const historyResetButton = document.querySelector("#history-reset");
+const historyFilterStatus = document.querySelector("#history-filter-status");
 const statusEl = document.querySelector("#status");
 const resultsEl = document.querySelector("#results");
 const historyEl = document.querySelector("#history");
 const historyPageSize = 4;
 let historyRecords = [];
+let filteredHistoryRecords = [];
 let historyPage = 1;
 
 const sampleSentences = [
@@ -43,6 +49,17 @@ function formatDate(value) {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function dateKey(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function selectedVoices() {
@@ -84,14 +101,44 @@ function formatErrors(errors = []) {
   return errors.map((item) => `${item.label || item.voiceId}: ${item.error}`).join(" ");
 }
 
+function historySearchText(record) {
+  const itemText = (record.items ?? [])
+    .map((item) => [item.label, item.shortLabel, item.region, item.voiceId].filter(Boolean).join(" "))
+    .join(" ");
+  return `${record.text} ${itemText}`.toLowerCase();
+}
+
+function applyHistoryFilters({ resetPage = true } = {}) {
+  const query = historySearchInput.value.trim().toLowerCase();
+  const startDate = historyStartDateInput.value;
+  const endDate = historyEndDateInput.value;
+
+  filteredHistoryRecords = historyRecords.filter((record) => {
+    const recordDate = dateKey(record.createdAt);
+    const matchesText = !query || historySearchText(record).includes(query);
+    const afterStart = !startDate || recordDate >= startDate;
+    const beforeEnd = !endDate || recordDate <= endDate;
+    return matchesText && afterStart && beforeEnd;
+  });
+
+  if (resetPage) {
+    historyPage = 1;
+  }
+}
+
 function updateHistoryPager(totalPages) {
-  const hasRecords = historyRecords.length > 0;
+  const hasRecords = filteredHistoryRecords.length > 0;
   historyPrevButton.disabled = !hasRecords || historyPage <= 1;
   historyNextButton.disabled = !hasRecords || historyPage >= totalPages;
   historyPageStatus.textContent = hasRecords ? `${historyPage} / ${totalPages}` : "";
+  historyFilterStatus.textContent = historyRecords.length
+    ? `${filteredHistoryRecords.length} of ${historyRecords.length} records`
+    : "";
 }
 
 function renderHistory() {
+  applyHistoryFilters({ resetPage: false });
+
   if (!historyRecords.length) {
     historyEl.className = "history-list empty-state";
     historyEl.textContent = "No saved generations yet.";
@@ -99,10 +146,17 @@ function renderHistory() {
     return;
   }
 
-  const totalPages = Math.max(1, Math.ceil(historyRecords.length / historyPageSize));
+  if (!filteredHistoryRecords.length) {
+    historyEl.className = "history-list empty-state";
+    historyEl.textContent = "No records match these filters.";
+    updateHistoryPager(1);
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filteredHistoryRecords.length / historyPageSize));
   historyPage = Math.min(historyPage, totalPages);
   const startIndex = (historyPage - 1) * historyPageSize;
-  const records = historyRecords.slice(startIndex, startIndex + historyPageSize);
+  const records = filteredHistoryRecords.slice(startIndex, startIndex + historyPageSize);
 
   historyEl.className = "history-list";
   historyEl.innerHTML = records
@@ -150,6 +204,7 @@ async function apiFetch(url, options) {
 
 async function loadHistory() {
   historyRecords = await apiFetch("/api/history");
+  applyHistoryFilters({ resetPage: false });
   renderHistory();
 }
 
@@ -203,7 +258,7 @@ historyEl.addEventListener("click", async (event) => {
   }
 
   await apiFetch(`/api/history/${button.dataset.delete}`, { method: "DELETE" });
-  if (historyPage > 1 && historyRecords.length % historyPageSize === 1) {
+  if (historyPage > 1 && filteredHistoryRecords.length % historyPageSize === 1) {
     historyPage -= 1;
   }
   await loadHistory();
@@ -224,8 +279,23 @@ historyPrevButton.addEventListener("click", () => {
 });
 
 historyNextButton.addEventListener("click", () => {
-  const totalPages = Math.max(1, Math.ceil(historyRecords.length / historyPageSize));
+  const totalPages = Math.max(1, Math.ceil(filteredHistoryRecords.length / historyPageSize));
   historyPage = Math.min(totalPages, historyPage + 1);
+  renderHistory();
+});
+
+for (const filterInput of [historySearchInput, historyStartDateInput, historyEndDateInput]) {
+  filterInput.addEventListener("input", () => {
+    applyHistoryFilters();
+    renderHistory();
+  });
+}
+
+historyResetButton.addEventListener("click", () => {
+  historySearchInput.value = "";
+  historyStartDateInput.value = "";
+  historyEndDateInput.value = "";
+  applyHistoryFilters();
   renderHistory();
 });
 

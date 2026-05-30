@@ -114,6 +114,22 @@
             <button type="button" id="clear-history" class="ghost-button">Clear</button>
           </div>
         </div>
+        <div class="history-filters" aria-label="History filters">
+          <label class="filter-field" for="history-search">
+            <span>Search</span>
+            <input id="history-search" type="search" placeholder="Text or voice" />
+          </label>
+          <label class="filter-field" for="history-start-date">
+            <span>From</span>
+            <input id="history-start-date" type="date" />
+          </label>
+          <label class="filter-field" for="history-end-date">
+            <span>To</span>
+            <input id="history-end-date" type="date" />
+          </label>
+          <button type="button" id="history-reset" class="ghost-button">Reset</button>
+        </div>
+        <div id="history-filter-status" class="filter-status"></div>
         <div id="history" class="history-list empty-state">No saved generations yet.</div>
       </section>
     </main>
