@@ -32,48 +32,50 @@
 
           <fieldset class="voice-grid">
             <legend>Regional voices</legend>
-            <label class="voice-option">
-              <input type="checkbox" name="voices" value="us_female" checked />
-              <span>
-                <strong>US Female</strong>
-                <small>American English</small>
-              </span>
-            </label>
-            <label class="voice-option">
-              <input type="checkbox" name="voices" value="us_male" />
-              <span>
-                <strong>US Male</strong>
-                <small>American English</small>
-              </span>
-            </label>
-            <label class="voice-option">
-              <input type="checkbox" name="voices" value="uk_female" checked />
-              <span>
-                <strong>UK Female</strong>
-                <small>British English</small>
-              </span>
-            </label>
-            <label class="voice-option">
-              <input type="checkbox" name="voices" value="uk_male" />
-              <span>
-                <strong>UK Male</strong>
-                <small>British English</small>
-              </span>
-            </label>
-            <label class="voice-option">
-              <input type="checkbox" name="voices" value="au_male" checked />
-              <span>
-                <strong>AU Male</strong>
-                <small>Australian English</small>
-              </span>
-            </label>
-            <label class="voice-option">
-              <input type="checkbox" name="voices" value="en_expressive_female" />
-              <span>
-                <strong>Expressive Female</strong>
-                <small>General English</small>
-              </span>
-            </label>
+            <div class="voice-grid-body">
+              <label class="voice-option">
+                <input type="checkbox" name="voices" value="us_female" checked />
+                <span>
+                  <strong>US Female</strong>
+                  <small>American English</small>
+                </span>
+              </label>
+              <label class="voice-option">
+                <input type="checkbox" name="voices" value="us_male" />
+                <span>
+                  <strong>US Male</strong>
+                  <small>American English</small>
+                </span>
+              </label>
+              <label class="voice-option">
+                <input type="checkbox" name="voices" value="uk_female" checked />
+                <span>
+                  <strong>UK Female</strong>
+                  <small>British English</small>
+                </span>
+              </label>
+              <label class="voice-option">
+                <input type="checkbox" name="voices" value="uk_male" />
+                <span>
+                  <strong>UK Male</strong>
+                  <small>British English</small>
+                </span>
+              </label>
+              <label class="voice-option">
+                <input type="checkbox" name="voices" value="au_male" checked />
+                <span>
+                  <strong>AU Male</strong>
+                  <small>Australian English</small>
+                </span>
+              </label>
+              <label class="voice-option">
+                <input type="checkbox" name="voices" value="en_expressive_female" />
+                <span>
+                  <strong>Expressive Female</strong>
+                  <small>General English</small>
+                </span>
+              </label>
+            </div>
           </fieldset>
 
           <div class="slider-row">
@@ -105,7 +107,12 @@
             <p class="eyebrow">Local archive</p>
             <h2>History</h2>
           </div>
-          <button type="button" id="clear-history" class="ghost-button">Clear</button>
+          <div class="history-actions">
+            <span id="history-page-status" class="page-status"></span>
+            <button type="button" id="history-prev" class="ghost-button">Prev</button>
+            <button type="button" id="history-next" class="ghost-button">Next</button>
+            <button type="button" id="clear-history" class="ghost-button">Clear</button>
+          </div>
         </div>
         <div id="history" class="history-list empty-state">No saved generations yet.</div>
       </section>

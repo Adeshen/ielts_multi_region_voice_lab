@@ -8,9 +8,15 @@ const speedValue = document.querySelector("#speed-value");
 const volumeValue = document.querySelector("#volume-value");
 const generateButton = document.querySelector("#generate-button");
 const clearHistoryButton = document.querySelector("#clear-history");
+const historyPrevButton = document.querySelector("#history-prev");
+const historyNextButton = document.querySelector("#history-next");
+const historyPageStatus = document.querySelector("#history-page-status");
 const statusEl = document.querySelector("#status");
 const resultsEl = document.querySelector("#results");
 const historyEl = document.querySelector("#history");
+const historyPageSize = 4;
+let historyRecords = [];
+let historyPage = 1;
 
 const sampleSentences = [
   "Some people believe that public transport should be free in large cities.",
@@ -78,12 +84,25 @@ function formatErrors(errors = []) {
   return errors.map((item) => `${item.label || item.voiceId}: ${item.error}`).join(" ");
 }
 
-function renderHistory(records) {
-  if (!records.length) {
+function updateHistoryPager(totalPages) {
+  const hasRecords = historyRecords.length > 0;
+  historyPrevButton.disabled = !hasRecords || historyPage <= 1;
+  historyNextButton.disabled = !hasRecords || historyPage >= totalPages;
+  historyPageStatus.textContent = hasRecords ? `${historyPage} / ${totalPages}` : "";
+}
+
+function renderHistory() {
+  if (!historyRecords.length) {
     historyEl.className = "history-list empty-state";
     historyEl.textContent = "No saved generations yet.";
+    updateHistoryPager(1);
     return;
   }
+
+  const totalPages = Math.max(1, Math.ceil(historyRecords.length / historyPageSize));
+  historyPage = Math.min(historyPage, totalPages);
+  const startIndex = (historyPage - 1) * historyPageSize;
+  const records = historyRecords.slice(startIndex, startIndex + historyPageSize);
 
   historyEl.className = "history-list";
   historyEl.innerHTML = records
@@ -113,6 +132,7 @@ function renderHistory(records) {
       `
     )
     .join("");
+  updateHistoryPager(totalPages);
 }
 
 async function apiFetch(url, options) {
@@ -129,8 +149,8 @@ async function apiFetch(url, options) {
 }
 
 async function loadHistory() {
-  const records = await apiFetch("/api/history");
-  renderHistory(records);
+  historyRecords = await apiFetch("/api/history");
+  renderHistory();
 }
 
 form.addEventListener("submit", async (event) => {
@@ -183,15 +203,30 @@ historyEl.addEventListener("click", async (event) => {
   }
 
   await apiFetch(`/api/history/${button.dataset.delete}`, { method: "DELETE" });
+  if (historyPage > 1 && historyRecords.length % historyPageSize === 1) {
+    historyPage -= 1;
+  }
   await loadHistory();
   setStatus("Deleted one history item.");
 });
 
 clearHistoryButton.addEventListener("click", async () => {
   await apiFetch("/api/history", { method: "DELETE" });
+  historyPage = 1;
   await loadHistory();
   renderResult(null);
   setStatus("History cleared.");
+});
+
+historyPrevButton.addEventListener("click", () => {
+  historyPage = Math.max(1, historyPage - 1);
+  renderHistory();
+});
+
+historyNextButton.addEventListener("click", () => {
+  const totalPages = Math.max(1, Math.ceil(historyRecords.length / historyPageSize));
+  historyPage = Math.min(totalPages, historyPage + 1);
+  renderHistory();
 });
 
 textInput.addEventListener("input", updateCounters);

@@ -53,7 +53,9 @@ textarea {
 .composer {
   position: sticky;
   top: 24px;
-  padding: 24px;
+  max-height: calc(100vh - 48px);
+  padding: 18px;
+  overflow: auto;
 }
 
 .workspace {
@@ -86,9 +88,9 @@ p {
 }
 
 h1 {
-  margin-bottom: 24px;
-  font-size: clamp(2rem, 4vw, 3.6rem);
-  line-height: 0.95;
+  margin-bottom: 14px;
+  font-size: clamp(1.55rem, 2.5vw, 2.15rem);
+  line-height: 1;
   letter-spacing: 0;
 }
 
@@ -105,7 +107,7 @@ h3 {
 
 .tts-form {
   display: grid;
-  gap: 16px;
+  gap: 10px;
 }
 
 .field-label,
@@ -118,7 +120,7 @@ legend {
 
 textarea {
   width: 100%;
-  min-height: 150px;
+  min-height: 96px;
   resize: vertical;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -143,25 +145,34 @@ button:focus-visible {
 }
 
 .form-meta {
-  margin-top: -8px;
+  margin-top: -6px;
   color: var(--muted);
   font-size: 0.9rem;
 }
 
 .voice-grid {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   border: 0;
 }
 
+.voice-grid-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 138px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
 .voice-option {
   display: flex;
-  gap: 12px;
-  min-height: 64px;
+  gap: 8px;
+  min-height: 52px;
   align-items: center;
-  padding: 12px;
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-strong);
@@ -176,7 +187,13 @@ button:focus-visible {
 
 .voice-option span {
   display: grid;
-  gap: 3px;
+  min-width: 0;
+  gap: 2px;
+}
+
+.voice-option strong,
+.voice-option small {
+  overflow-wrap: anywhere;
 }
 
 .voice-option small,
@@ -186,7 +203,7 @@ button:focus-visible {
 
 .slider-row {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .slider-row label {
@@ -234,6 +251,21 @@ input[type="range"] {
   background: #fff;
   border-color: rgba(180, 35, 24, 0.25);
   color: var(--danger);
+}
+
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+}
+
+.page-status {
+  min-width: 76px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: right;
 }
 
 .status {
@@ -322,10 +354,16 @@ input[type="range"] {
 
   .composer {
     position: static;
+    max-height: none;
   }
 
   .result-grid,
-  .history-audios {
+  .history-audios,
+  .voice-grid-body {
     grid-template-columns: 1fr;
+  }
+
+  .voice-grid-body {
+    max-height: 260px;
   }
 }
