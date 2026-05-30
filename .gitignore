@@ -1,0 +1,5 @@
+.env
+node_modules/
+data/audio/
+data/history.json
+.DS_Store
