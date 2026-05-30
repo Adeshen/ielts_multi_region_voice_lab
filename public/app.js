@@ -76,15 +76,6 @@ function audioFrameFor(audio) {
   return audio.closest(".audio-card, .history-audio");
 }
 
-function clearPlayingFrames(exceptAudio) {
-  document.querySelectorAll("audio").forEach((audio) => {
-    if (audio !== exceptAudio && !audio.paused) {
-      audio.pause();
-    }
-  });
-  document.querySelectorAll(".is-playing").forEach((frame) => frame.classList.remove("is-playing"));
-}
-
 function renderResult(record) {
   if (!record?.items?.length) {
     resultsEl.className = "result-grid empty-state";
@@ -285,7 +276,6 @@ document.addEventListener(
       return;
     }
 
-    clearPlayingFrames(event.target);
     audioFrameFor(event.target)?.classList.add("is-playing");
   },
   true
