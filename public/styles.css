@@ -170,9 +170,9 @@ button:focus-visible {
 .voice-option {
   display: flex;
   gap: 8px;
-  min-height: 52px;
+  min-height: 62px;
   align-items: center;
-  padding: 10px;
+  padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-strong);
@@ -188,12 +188,22 @@ button:focus-visible {
 .voice-option span {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 4px;
+  line-height: 1.15;
 }
 
 .voice-option strong,
 .voice-option small {
   overflow-wrap: anywhere;
+}
+
+.voice-option strong {
+  font-size: 0.86rem;
+}
+
+.voice-option small {
+  font-size: 0.76rem;
+  line-height: 1.2;
 }
 
 .voice-option small,
