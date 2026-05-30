@@ -72,6 +72,19 @@ function updateCounters() {
   volumeValue.textContent = `${Number(volumeInput.value).toFixed(2)}x`;
 }
 
+function audioFrameFor(audio) {
+  return audio.closest(".audio-card, .history-audio");
+}
+
+function clearPlayingFrames(exceptAudio) {
+  document.querySelectorAll("audio").forEach((audio) => {
+    if (audio !== exceptAudio && !audio.paused) {
+      audio.pause();
+    }
+  });
+  document.querySelectorAll(".is-playing").forEach((frame) => frame.classList.remove("is-playing"));
+}
+
 function renderResult(record) {
   if (!record?.items?.length) {
     resultsEl.className = "result-grid empty-state";
@@ -264,6 +277,43 @@ historyEl.addEventListener("click", async (event) => {
   await loadHistory();
   setStatus("Deleted one history item.");
 });
+
+document.addEventListener(
+  "play",
+  (event) => {
+    if (event.target.tagName !== "AUDIO") {
+      return;
+    }
+
+    clearPlayingFrames(event.target);
+    audioFrameFor(event.target)?.classList.add("is-playing");
+  },
+  true
+);
+
+document.addEventListener(
+  "pause",
+  (event) => {
+    if (event.target.tagName !== "AUDIO") {
+      return;
+    }
+
+    audioFrameFor(event.target)?.classList.remove("is-playing");
+  },
+  true
+);
+
+document.addEventListener(
+  "ended",
+  (event) => {
+    if (event.target.tagName !== "AUDIO") {
+      return;
+    }
+
+    audioFrameFor(event.target)?.classList.remove("is-playing");
+  },
+  true
+);
 
 clearHistoryButton.addEventListener("click", async () => {
   await apiFetch("/api/history", { method: "DELETE" });

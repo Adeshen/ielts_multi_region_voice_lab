@@ -349,6 +349,42 @@ input[type="range"] {
   padding: 16px;
 }
 
+.audio-card,
+.history-audio {
+  position: relative;
+  isolation: isolate;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+.audio-card::before,
+.history-audio::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  z-index: -1;
+  border: 2px solid rgba(15, 118, 110, 0.35);
+  border-radius: 10px;
+  opacity: 0;
+  transform: scale(0.98);
+  pointer-events: none;
+}
+
+.audio-card.is-playing,
+.history-audio.is-playing {
+  border-color: rgba(15, 118, 110, 0.65);
+  background: rgba(15, 118, 110, 0.06);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.audio-card.is-playing::before,
+.history-audio.is-playing::before {
+  animation: recording-pulse 1.7s ease-out infinite;
+  opacity: 1;
+}
+
 .audio-card audio {
   width: 100%;
   margin-top: 10px;
@@ -380,10 +416,30 @@ input[type="range"] {
 .history-audio {
   display: grid;
   gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px;
 }
 
 .history-audio audio {
   width: 100%;
+}
+
+@keyframes recording-pulse {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.98);
+  }
+
+  70% {
+    opacity: 0;
+    transform: scale(1.045);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.045);
+  }
 }
 
 .empty-state {
