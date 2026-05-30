@@ -13,12 +13,21 @@
 
 ## 案例演示
 
-项目包含一个演示视频，用于说明这个网页的实际使用流程：
+<table>
+<tr>
+<td width="100%">
 
-- 演示文件：[`media/example_multi_region.mp4`](media/example_multi_region.mp4)
-- 演示内容：输入 IELTS 英文句子，选择多个英语地区音色，生成音频并在网页中播放对比。
+### 多地区音色生成与播放对比
+---
+https://github.com/Adeshen/ielts_multi_region_voice_lab/raw/refs/heads/main/media/example_multi_region.mp4
 
-> GitHub README 对仓库内的 `.mp4` 文件通常只渲染为链接，不会像图片一样自动内嵌播放器；浏览器也会限制带声音视频自动播放。若需要在 GitHub 页面直接显示视频播放器，可以在 GitHub 的 Issue、PR 评论或 README 网页编辑器中拖拽上传该 MP4，然后把 GitHub 生成的 `https://github.com/user-attachments/assets/...` 视频 URL 单独放在 README 一行。
+</td>
+</tr>
+</table>
+
+演示内容：输入 IELTS 英文句子，选择多个英语地区音色，生成音频并在网页中播放对比。
+
+> 如果 GitHub 仍然把上方视频显示为普通链接，请在 GitHub 的 Issue、PR 评论或 README 网页编辑器中拖拽上传 `media/example_multi_region.mp4`，然后把 GitHub 生成的 `https://github.com/user-attachments/assets/...` 地址替换上面的 raw 视频 URL。`user-attachments` 地址是 GitHub README 中最稳定的内嵌视频播放器方式。
 
 ## 快速启动
 
