@@ -18,6 +18,8 @@
 - 演示文件：[`media/example_multi_region.mp4`](media/example_multi_region.mp4)
 - 演示内容：输入 IELTS 英文句子，选择多个英语地区音色，生成音频并在网页中播放对比。
 
+> GitHub README 对仓库内的 `.mp4` 文件通常只渲染为链接，不会像图片一样自动内嵌播放器；浏览器也会限制带声音视频自动播放。若需要在 GitHub 页面直接显示视频播放器，可以在 GitHub 的 Issue、PR 评论或 README 网页编辑器中拖拽上传该 MP4，然后把 GitHub 生成的 `https://github.com/user-attachments/assets/...` 视频 URL 单独放在 README 一行。
+
 ## 快速启动
 
 ```bash
