@@ -402,9 +402,63 @@ input[type="range"] {
   align-items: start;
 }
 
+.history-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .history-text {
   margin: 0;
   line-height: 1.5;
+}
+
+.rewrite-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.rewrite-panel[hidden] {
+  display: none;
+}
+
+.rewrite-input {
+  min-height: 92px;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--ink);
+  background: var(--surface);
+  line-height: 1.45;
+}
+
+.rewrite-input:focus {
+  outline: 3px solid rgba(15, 118, 110, 0.25);
+  outline-offset: 2px;
+}
+
+.rewrite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.rewrite-result {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.rewrite-result.is-strong {
+  color: var(--accent);
 }
 
 .history-audios {

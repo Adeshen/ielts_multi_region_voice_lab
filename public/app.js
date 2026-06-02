@@ -105,6 +105,54 @@ function formatErrors(errors = []) {
   return errors.map((item) => `${item.label || item.voiceId}: ${item.error}`).join(" ");
 }
 
+function normalizePracticeText(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s']/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function editDistance(left, right) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const current = Array.from({ length: right.length + 1 }, () => 0);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    current[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      current[rightIndex] = Math.min(
+        previous[rightIndex] + 1,
+        current[rightIndex - 1] + 1,
+        previous[rightIndex - 1] + substitutionCost
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+
+  return previous[right.length];
+}
+
+function practiceScore(originalText, attemptText) {
+  const original = normalizePracticeText(originalText);
+  const attempt = normalizePracticeText(attemptText);
+  if (!attempt) {
+    return null;
+  }
+
+  const distance = editDistance(original, attempt);
+  const accuracy = Math.max(0, Math.round((1 - distance / Math.max(original.length, attempt.length, 1)) * 100));
+  const originalWords = original.split(" ").filter(Boolean);
+  const attemptWords = new Set(attempt.split(" ").filter(Boolean));
+  const matchedWords = originalWords.filter((word) => attemptWords.has(word)).length;
+
+  return {
+    accuracy,
+    matchedWords,
+    totalWords: originalWords.length
+  };
+}
+
 function historySearchText(record) {
   const itemText = (record.items ?? [])
     .map((item) => [item.label, item.shortLabel, item.region, item.voiceId].filter(Boolean).join(" "))
@@ -172,7 +220,18 @@ function renderHistory() {
               <p class="eyebrow">${escapeHtml(formatDate(record.createdAt))}</p>
               <p class="history-text">${escapeHtml(record.text)}</p>
             </div>
-            <button type="button" class="danger-button" data-delete="${escapeHtml(record.id)}">Delete</button>
+            <div class="history-card-actions">
+              <button type="button" class="ghost-button" data-practice="${escapeHtml(record.id)}">Rewrite</button>
+              <button type="button" class="danger-button" data-delete="${escapeHtml(record.id)}">Delete</button>
+            </div>
+          </div>
+          <div class="rewrite-panel" hidden>
+            <textarea class="rewrite-input" rows="3" placeholder="Type what you hear"></textarea>
+            <div class="rewrite-actions">
+              <button type="button" class="ghost-button" data-check="${escapeHtml(record.id)}">Check</button>
+              <button type="button" class="ghost-button" data-clear-practice="${escapeHtml(record.id)}">Clear</button>
+              <span class="rewrite-result"></span>
+            </div>
           </div>
           <div class="history-audios">
             ${record.items
@@ -256,6 +315,40 @@ sampleButton.addEventListener("click", () => {
 });
 
 historyEl.addEventListener("click", async (event) => {
+  const practiceButton = event.target.closest("[data-practice]");
+  if (practiceButton) {
+    const card = practiceButton.closest(".history-card");
+    const panel = card.querySelector(".rewrite-panel");
+    panel.hidden = !panel.hidden;
+    practiceButton.textContent = panel.hidden ? "Rewrite" : "Hide";
+    if (!panel.hidden) {
+      card.querySelector(".rewrite-input").focus();
+    }
+    return;
+  }
+
+  const checkButton = event.target.closest("[data-check]");
+  if (checkButton) {
+    const card = checkButton.closest(".history-card");
+    const record = historyRecords.find((item) => item.id === checkButton.dataset.check);
+    const input = card.querySelector(".rewrite-input");
+    const result = card.querySelector(".rewrite-result");
+    const score = practiceScore(record?.text ?? "", input.value);
+    result.textContent = score
+      ? `Accuracy ${score.accuracy}% · Words ${score.matchedWords}/${score.totalWords}`
+      : "Type an answer first.";
+    result.classList.toggle("is-strong", Boolean(score && score.accuracy >= 85));
+    return;
+  }
+
+  const clearPracticeButton = event.target.closest("[data-clear-practice]");
+  if (clearPracticeButton) {
+    const card = clearPracticeButton.closest(".history-card");
+    card.querySelector(".rewrite-input").value = "";
+    card.querySelector(".rewrite-result").textContent = "";
+    return;
+  }
+
   const button = event.target.closest("[data-delete]");
   if (!button) {
     return;
