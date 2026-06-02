@@ -218,7 +218,8 @@ function renderHistory() {
           <div class="history-title-row">
             <div>
               <p class="eyebrow">${escapeHtml(formatDate(record.createdAt))}</p>
-              <p class="history-text">${escapeHtml(record.text)}</p>
+              <p class="history-text" data-original-text>${escapeHtml(record.text)}</p>
+              <p class="history-text-placeholder" hidden>Original sentence hidden for rewrite practice.</p>
             </div>
             <div class="history-card-actions">
               <button type="button" class="ghost-button" data-practice="${escapeHtml(record.id)}">Rewrite</button>
@@ -319,8 +320,12 @@ historyEl.addEventListener("click", async (event) => {
   if (practiceButton) {
     const card = practiceButton.closest(".history-card");
     const panel = card.querySelector(".rewrite-panel");
+    const originalText = card.querySelector("[data-original-text]");
+    const hiddenText = card.querySelector(".history-text-placeholder");
     panel.hidden = !panel.hidden;
     practiceButton.textContent = panel.hidden ? "Rewrite" : "Hide";
+    originalText.hidden = !panel.hidden;
+    hiddenText.hidden = panel.hidden;
     if (!panel.hidden) {
       card.querySelector(".rewrite-input").focus();
     }
