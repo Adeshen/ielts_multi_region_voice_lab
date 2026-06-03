@@ -6,7 +6,13 @@ export const voicePresets = {
     region: "United States",
     gender: "Female",
     speaker: "en_female_dacey_uranus_bigtts",
-    resourceId: "seed-tts-2.0"
+    resourceId: "seed-tts-2.0",
+    fallbacks: [
+      {
+        speaker: "en_female_candice_emo_v2_mars_bigtts",
+        resourceId: "seed-tts-1.0"
+      }
+    ]
   },
   us_male: {
     id: "us_male",
@@ -15,7 +21,13 @@ export const voicePresets = {
     region: "United States",
     gender: "Male",
     speaker: "en_male_tim_uranus_bigtts",
-    resourceId: "seed-tts-2.0"
+    resourceId: "seed-tts-2.0",
+    fallbacks: [
+      {
+        speaker: "en_male_glen_emo_v2_mars_bigtts",
+        resourceId: "seed-tts-1.0"
+      }
+    ]
   },
   uk_female: {
     id: "uk_female",
@@ -58,7 +70,7 @@ export const voicePresets = {
 export const defaultVoiceIds = ["us_female", "uk_female", "au_male"];
 
 export function listVoices() {
-  return Object.values(voicePresets).map(({ speaker, resourceId, ...publicVoice }) => publicVoice);
+  return Object.values(voicePresets).map(({ speaker, resourceId, fallbacks, ...publicVoice }) => publicVoice);
 }
 
 export function resolveVoiceIds(voiceIds) {

@@ -16,9 +16,13 @@ export function validateCredentials() {
 
 export async function synthesizeSpeech({ text, voice, speedRatio, volumeRatio }) {
   if ((process.env.VOLCENGINE_API_VERSION || "v3").toLowerCase() === "v3") {
-    return synthesizeSpeechV3({ text, voice, speedRatio, volumeRatio });
+    return synthesizeSpeechV3WithFallbacks({ text, voice, speedRatio, volumeRatio });
   }
   return synthesizeSpeechV1({ text, voice, speedRatio, volumeRatio });
+}
+
+function canTryFallback(error) {
+  return /quota exceeded|resource not granted/i.test(error.message);
 }
 
 function toPercentRatio(value) {
@@ -65,7 +69,31 @@ function parseJsonEvents(raw) {
   return events;
 }
 
-async function synthesizeSpeechV3({ text, voice, speedRatio, volumeRatio }) {
+async function synthesizeSpeechV3WithFallbacks({ text, voice, speedRatio, volumeRatio }) {
+  const attempts = [
+    voice,
+    ...(voice.fallbacks ?? []).map((fallback) => ({
+      ...voice,
+      ...fallback
+    }))
+  ];
+  let lastError;
+
+  for (const attemptVoice of attempts) {
+    try {
+      return await synthesizeSpeechV3Request({ text, voice: attemptVoice, speedRatio, volumeRatio });
+    } catch (error) {
+      lastError = error;
+      if (!canTryFallback(error)) {
+        break;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+async function synthesizeSpeechV3Request({ text, voice, speedRatio, volumeRatio }) {
   const appid = requiredEnv("VOLCENGINE_APP_ID");
   const token = requiredEnv("VOLCENGINE_ACCESS_TOKEN");
   const requestId = crypto.randomUUID();
