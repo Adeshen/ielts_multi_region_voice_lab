@@ -1,0 +1,538 @@
+const form = document.querySelector("#speaking-form");
+const promptInput = document.querySelector("#prompt");
+const promptCount = document.querySelector("#prompt-count");
+const sampleButton = document.querySelector("#prompt-sample");
+const saveButton = document.querySelector("#save-prompt");
+const clearButton = document.querySelector("#clear-speaking");
+const statusEl = document.querySelector("#speaking-status");
+const listEl = document.querySelector("#speaking-list");
+
+let records = [];
+let activeRecording = null;
+const expandedAnalyses = new Set();
+
+const samples = [
+  "Describe a time when you learned something useful from another person.",
+  "Talk about a public place in your city that you enjoy visiting.",
+  "Some people prefer to study alone, while others prefer to study with classmates. Which do you prefer and why?"
+];
+
+function setStatus(message, type = "info") {
+  statusEl.textContent = message;
+  statusEl.className = `status ${type === "error" ? "error" : ""}`.trim();
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatDate(value) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
+}
+
+function recordingSupported() {
+  return Boolean(navigator.mediaDevices?.getUserMedia && (window.AudioContext || window.webkitAudioContext));
+}
+
+function mergeAudioBuffers(chunks) {
+  const totalLength = chunks.reduce((total, chunk) => total + chunk.length, 0);
+  const result = new Float32Array(totalLength);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return result;
+}
+
+function encodeWav(samples, sampleRate) {
+  const bytesPerSample = 2;
+  const blockAlign = bytesPerSample;
+  const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
+  const view = new DataView(buffer);
+
+  const writeString = (offset, value) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * bytesPerSample, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, samples.length * bytesPerSample, true);
+
+  let offset = 44;
+  samples.forEach((sample) => {
+    const clamped = Math.max(-1, Math.min(1, sample));
+    view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+    offset += bytesPerSample;
+  });
+
+  return new Blob([view], { type: "audio/wav" });
+}
+
+function createWavRecorder(stream) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  const audioContext = new AudioContextClass();
+  const source = audioContext.createMediaStreamSource(stream);
+  const processor = audioContext.createScriptProcessor(4096, 1, 1);
+  const chunks = [];
+
+  processor.onaudioprocess = (audioEvent) => {
+    chunks.push(new Float32Array(audioEvent.inputBuffer.getChannelData(0)));
+  };
+
+  source.connect(processor);
+  processor.connect(audioContext.destination);
+
+  return {
+    stop() {
+      processor.disconnect();
+      source.disconnect();
+      const sampleRate = audioContext.sampleRate;
+      const samples = mergeAudioBuffers(chunks);
+      audioContext.close();
+      return encodeWav(samples, sampleRate);
+    }
+  };
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.addEventListener("error", () => reject(reader.error || new Error("Could not read recording.")));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function updateCounter() {
+  promptCount.textContent = `${promptInput.value.length} / ${promptInput.maxLength}`;
+}
+
+function audioFrameFor(audio) {
+  return audio.closest(".history-audio");
+}
+
+function renderAnalysis(analysis, recordingId) {
+  if (!analysis) {
+    return "";
+  }
+
+  const panelId = `analysis-${recordingId}`;
+  const isExpanded = expandedAnalyses.has(recordingId);
+  const criteria = analysis.criteria ?? {};
+  const strengths = (analysis.strengths ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const improvements = (analysis.improvements ?? []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const corrections = (analysis.sentenceCorrections ?? [])
+    .map(
+      (item) => `
+        <div class="analysis-correction">
+          <p><strong>Original:</strong> ${escapeHtml(item.original ?? "")}</p>
+          <p><strong>Better:</strong> ${escapeHtml(item.improved ?? "")}</p>
+          <p class="muted">${escapeHtml(item.reason ?? "")}</p>
+        </div>
+      `
+    )
+    .join("");
+
+  return `
+    <div class="analysis-panel ${isExpanded ? "is-expanded" : "is-collapsed"}">
+      <div class="analysis-header">
+        <div class="analysis-score-row">
+          <span class="analysis-score">Band ${escapeHtml(analysis.overallBand ?? "-")}</span>
+          <span>FC ${escapeHtml(criteria.fluencyCoherence ?? "-")}</span>
+          <span>LR ${escapeHtml(criteria.lexicalResource ?? "-")}</span>
+          <span>GRA ${escapeHtml(criteria.grammarRangeAccuracy ?? "-")}</span>
+          <span>Pron. ${escapeHtml(criteria.pronunciationEstimate ?? "N/A")}</span>
+        </div>
+        <button
+          type="button"
+          class="ghost-button compact-button"
+          data-toggle-analysis="${escapeHtml(recordingId)}"
+          aria-expanded="${isExpanded ? "true" : "false"}"
+          aria-controls="${escapeHtml(panelId)}"
+        >${isExpanded ? "Collapse" : "Expand"}</button>
+      </div>
+      <p class="analysis-summary">${escapeHtml(analysis.summary ?? "")}</p>
+      <div id="${escapeHtml(panelId)}" class="analysis-body" ${isExpanded ? "" : "hidden"}>
+        <div class="analysis-columns">
+          <div>
+            <h4>Strengths</h4>
+            <ul>${strengths}</ul>
+          </div>
+          <div>
+            <h4>Improve</h4>
+            <ul>${improvements}</ul>
+          </div>
+        </div>
+        ${corrections ? `<div class="analysis-section"><h4>Sentence fixes</h4>${corrections}</div>` : ""}
+        <div class="analysis-section">
+          <h4>Model answer</h4>
+          <p class="model-answer">${escapeHtml(analysis.modelAnswer ?? "")}</p>
+        </div>
+        <p class="muted">${escapeHtml(analysis.practiceTip ?? "")}</p>
+        <p class="muted">${escapeHtml(analysis.limitation ?? "")}</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderRecordings(record) {
+  const recordings = record.recordings ?? [];
+  if (!recordings.length) {
+    return '<p class="recording-empty">No recordings yet.</p>';
+  }
+
+  return recordings
+    .map(
+      (recording, index) => `
+        <div class="history-audio learner-recording">
+          <div class="recording-title-row">
+            <div>
+              <strong>Practice recording ${recordings.length - index}</strong>
+              <span>${escapeHtml(formatDate(recording.createdAt))}</span>
+            </div>
+            <button
+              type="button"
+              class="danger-button compact-button"
+              data-delete-recording="${escapeHtml(recording.id)}"
+              data-record-id="${escapeHtml(record.id)}"
+            >Delete</button>
+          </div>
+          <audio controls preload="metadata" src="${escapeHtml(recording.audioUrl)}"></audio>
+          <div class="transcript-panel">
+            <label>
+              <span>Answer transcript</span>
+              <textarea
+                class="transcript-input"
+                rows="4"
+                maxlength="4000"
+                placeholder="Paste or type what you said in this recording."
+                data-transcript="${escapeHtml(recording.id)}"
+              >${escapeHtml(recording.transcript ?? "")}</textarea>
+            </label>
+            <button
+              type="button"
+              class="ghost-button"
+              data-transcribe-recording="${escapeHtml(recording.id)}"
+              data-record-id="${escapeHtml(record.id)}"
+            >Transcribe</button>
+            <button
+              type="button"
+              class="ghost-button"
+              data-analyze-recording="${escapeHtml(recording.id)}"
+              data-record-id="${escapeHtml(record.id)}"
+            >Analyze</button>
+          </div>
+          ${renderAnalysis(recording.analysis, recording.id)}
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderRecords() {
+  if (!records.length) {
+    listEl.className = "history-list empty-state";
+    listEl.textContent = "No speaking prompts yet.";
+    return;
+  }
+
+  listEl.className = "history-list";
+  listEl.innerHTML = records
+    .map(
+      (record) => `
+        <article class="history-card speaking-card" data-id="${escapeHtml(record.id)}">
+          <div class="history-title-row">
+            <div>
+              <p class="eyebrow">${escapeHtml(formatDate(record.createdAt))}</p>
+              <h3>${escapeHtml(record.title)}</h3>
+              <p class="history-text speaking-prompt-text">${escapeHtml(record.prompt)}</p>
+            </div>
+            <div class="history-card-actions">
+              <button type="button" class="primary-button" data-start-recording="${escapeHtml(record.id)}">Start recording</button>
+              <button type="button" class="ghost-button" data-stop-recording="${escapeHtml(record.id)}" disabled>Stop</button>
+              <button type="button" class="danger-button" data-delete-record="${escapeHtml(record.id)}">Delete</button>
+            </div>
+          </div>
+          <div class="record-status" data-record-status="${escapeHtml(record.id)}">Ready to record your answer.</div>
+          <div class="recordings-list">
+            ${renderRecordings(record)}
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+async function apiFetch(url, options) {
+  const response = await fetch(url, options);
+  if (response.status === 204) {
+    return null;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "Request failed.");
+  }
+  return payload;
+}
+
+async function loadRecords() {
+  records = await apiFetch("/api/speaking");
+  renderRecords();
+}
+
+function resetRecordingUi() {
+  if (!activeRecording) {
+    return;
+  }
+
+  activeRecording.stream.getTracks().forEach((track) => track.stop());
+  activeRecording.card.classList.remove("is-recording");
+  activeRecording.startButton.disabled = false;
+  activeRecording.stopButton.disabled = true;
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  saveButton.disabled = true;
+  saveButton.textContent = "Saving...";
+  try {
+    const record = await apiFetch("/api/speaking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: promptInput.value })
+    });
+    await loadRecords();
+    setStatus(`Saved prompt: ${record.title}`);
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "Save prompt";
+  }
+});
+
+sampleButton.addEventListener("click", () => {
+  promptInput.value = samples[Math.floor(Math.random() * samples.length)];
+  updateCounter();
+  promptInput.focus();
+});
+
+listEl.addEventListener("click", async (event) => {
+  const startButton = event.target.closest("[data-start-recording]");
+  if (startButton) {
+    if (!recordingSupported()) {
+      setStatus("Microphone recording is not supported in this browser.", "error");
+      return;
+    }
+    if (activeRecording) {
+      setStatus("Stop the current recording before starting another one.", "error");
+      return;
+    }
+
+    const recordId = startButton.dataset.startRecording;
+    const card = startButton.closest(".speaking-card");
+    const stopButton = card.querySelector("[data-stop-recording]");
+    const cardStatus = card.querySelector("[data-record-status]");
+    let stream;
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = createWavRecorder(stream);
+      activeRecording = {
+        card,
+        recorder,
+        startButton,
+        stopButton,
+        stream
+      };
+      card.classList.add("is-recording");
+      startButton.disabled = true;
+      stopButton.disabled = false;
+      cardStatus.textContent = "Recording... speak your answer.";
+      setStatus("Recording from microphone...");
+    } catch (error) {
+      stream?.getTracks().forEach((track) => track.stop());
+      setStatus(error.message || "Could not start microphone recording.", "error");
+    }
+    return;
+  }
+
+  const stopButton = event.target.closest("[data-stop-recording]");
+  if (stopButton) {
+    if (!activeRecording) {
+      return;
+    }
+    const recording = activeRecording;
+    stopButton.disabled = true;
+    try {
+      const blob = recording.recorder.stop();
+      recording.card.querySelector("[data-record-status]").textContent = "Saving recording...";
+      resetRecordingUi();
+      activeRecording = null;
+      const dataUrl = await blobToDataUrl(blob);
+      await apiFetch(`/api/speaking/${recording.card.dataset.id}/recordings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl })
+      });
+      await loadRecords();
+      setStatus("Recording saved.");
+    } catch (error) {
+      activeRecording = null;
+      setStatus(error.message, "error");
+    }
+    return;
+  }
+
+  const deleteRecordingButton = event.target.closest("[data-delete-recording]");
+  if (deleteRecordingButton) {
+    await apiFetch(
+      `/api/speaking/${deleteRecordingButton.dataset.recordId}/recordings/${deleteRecordingButton.dataset.deleteRecording}`,
+      { method: "DELETE" }
+    );
+    await loadRecords();
+    setStatus("Deleted one recording.");
+    return;
+  }
+
+  const toggleAnalysisButton = event.target.closest("[data-toggle-analysis]");
+  if (toggleAnalysisButton) {
+    const recordingId = toggleAnalysisButton.dataset.toggleAnalysis;
+    if (expandedAnalyses.has(recordingId)) {
+      expandedAnalyses.delete(recordingId);
+    } else {
+      expandedAnalyses.add(recordingId);
+    }
+    renderRecords();
+    return;
+  }
+
+  const transcribeButton = event.target.closest("[data-transcribe-recording]");
+  if (transcribeButton) {
+    transcribeButton.disabled = true;
+    transcribeButton.textContent = "Transcribing...";
+    try {
+      await apiFetch(
+        `/api/speaking/${transcribeButton.dataset.recordId}/recordings/${transcribeButton.dataset.transcribeRecording}/transcribe`,
+        { method: "POST" }
+      );
+      await loadRecords();
+      setStatus("Transcript ready. You can analyze it now.");
+    } catch (error) {
+      setStatus(error.message, "error");
+    } finally {
+      transcribeButton.disabled = false;
+      transcribeButton.textContent = "Transcribe";
+    }
+    return;
+  }
+
+  const analyzeButton = event.target.closest("[data-analyze-recording]");
+  if (analyzeButton) {
+    const card = analyzeButton.closest(".history-audio");
+    const transcriptInput = card.querySelector(`[data-transcript="${CSS.escape(analyzeButton.dataset.analyzeRecording)}"]`);
+    analyzeButton.disabled = true;
+    analyzeButton.textContent = "Analyzing...";
+    try {
+      await apiFetch(
+        `/api/speaking/${analyzeButton.dataset.recordId}/recordings/${analyzeButton.dataset.analyzeRecording}/analyze`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript: transcriptInput.value })
+        }
+      );
+      expandedAnalyses.add(analyzeButton.dataset.analyzeRecording);
+      await loadRecords();
+      setStatus("Analysis ready.");
+    } catch (error) {
+      setStatus(error.message, "error");
+    } finally {
+      analyzeButton.disabled = false;
+      analyzeButton.textContent = "Analyze";
+    }
+    return;
+  }
+
+  const deleteRecordButton = event.target.closest("[data-delete-record]");
+  if (deleteRecordButton) {
+    if (activeRecording) {
+      setStatus("Stop the current recording before deleting a prompt.", "error");
+      return;
+    }
+    await apiFetch(`/api/speaking/${deleteRecordButton.dataset.deleteRecord}`, { method: "DELETE" });
+    await loadRecords();
+    setStatus("Deleted one speaking prompt.");
+  }
+});
+
+document.addEventListener(
+  "play",
+  (event) => {
+    if (event.target.tagName !== "AUDIO") {
+      return;
+    }
+    audioFrameFor(event.target)?.classList.add("is-playing");
+  },
+  true
+);
+
+document.addEventListener(
+  "pause",
+  (event) => {
+    if (event.target.tagName !== "AUDIO") {
+      return;
+    }
+    audioFrameFor(event.target)?.classList.remove("is-playing");
+  },
+  true
+);
+
+document.addEventListener(
+  "ended",
+  (event) => {
+    if (event.target.tagName !== "AUDIO") {
+      return;
+    }
+    audioFrameFor(event.target)?.classList.remove("is-playing");
+  },
+  true
+);
+
+clearButton.addEventListener("click", async () => {
+  if (activeRecording) {
+    setStatus("Stop the current recording before clearing prompts.", "error");
+    return;
+  }
+  await apiFetch("/api/speaking", { method: "DELETE" });
+  await loadRecords();
+  setStatus("Speaking prompts cleared.");
+});
+
+promptInput.addEventListener("input", updateCounter);
+
+updateCounter();
+loadRecords().catch((error) => setStatus(error.message, "error"));

@@ -3,21 +3,31 @@ import path from "node:path";
 
 export const dataDir = path.join(process.cwd(), "data");
 export const audioDir = path.join(dataDir, "audio");
+export const recordingDir = path.join(dataDir, "recordings");
+export const speakingRecordingDir = path.join(dataDir, "speaking-recordings");
 export const historyPath = path.join(dataDir, "history.json");
+export const speakingHistoryPath = path.join(dataDir, "speaking-history.json");
 
 export async function ensureStorage() {
   await fs.mkdir(audioDir, { recursive: true });
+  await fs.mkdir(recordingDir, { recursive: true });
+  await fs.mkdir(speakingRecordingDir, { recursive: true });
+  await ensureJsonArrayFile(historyPath);
+  await ensureJsonArrayFile(speakingHistoryPath);
+}
+
+async function ensureJsonArrayFile(filePath) {
   try {
-    await fs.access(historyPath);
+    await fs.access(filePath);
   } catch {
-    await fs.writeFile(historyPath, "[]\n", "utf8");
+    await fs.writeFile(filePath, "[]\n", "utf8");
   }
 }
 
-export async function readHistory() {
+async function readJsonArray(filePath) {
   await ensureStorage();
   try {
-    const raw = await fs.readFile(historyPath, "utf8");
+    const raw = await fs.readFile(filePath, "utf8");
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -25,11 +35,27 @@ export async function readHistory() {
   }
 }
 
-export async function writeHistory(records) {
+async function writeJsonArray(filePath, records) {
   await ensureStorage();
-  const tempPath = `${historyPath}.tmp`;
+  const tempPath = `${filePath}.tmp`;
   await fs.writeFile(tempPath, `${JSON.stringify(records, null, 2)}\n`, "utf8");
-  await fs.rename(tempPath, historyPath);
+  await fs.rename(tempPath, filePath);
+}
+
+export async function readHistory() {
+  return readJsonArray(historyPath);
+}
+
+export async function writeHistory(records) {
+  await writeJsonArray(historyPath, records);
+}
+
+export async function readSpeakingRecords() {
+  return readJsonArray(speakingHistoryPath);
+}
+
+export async function writeSpeakingRecords(records) {
+  await writeJsonArray(speakingHistoryPath, records);
 }
 
 export async function addHistoryRecord(record) {
@@ -38,9 +64,45 @@ export async function addHistoryRecord(record) {
   await writeHistory(history.slice(0, 100));
 }
 
+export async function addSpeakingRecord(record) {
+  const records = await readSpeakingRecords();
+  records.unshift(record);
+  await writeSpeakingRecords(records.slice(0, 100));
+}
+
 export async function removeAudioFiles(record) {
-  const filenames = new Set(
+  const audioFilenames = new Set(
     (record?.items ?? [])
+      .map((item) => item.filename)
+      .filter((filename) => typeof filename === "string" && !filename.includes(".."))
+  );
+  const recordingFilenames = new Set(
+    (record?.recordings ?? [])
+      .map((item) => item.filename)
+      .filter((filename) => typeof filename === "string" && !filename.includes(".."))
+  );
+
+  const deletions = [
+    ...[...audioFilenames].map((filename) => ({ dir: audioDir, filename })),
+    ...[...recordingFilenames].map((filename) => ({ dir: recordingDir, filename }))
+  ];
+
+  await Promise.all(
+    deletions.map(async ({ dir, filename }) => {
+      try {
+        await fs.unlink(path.join(dir, filename));
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
+      }
+    })
+  );
+}
+
+export async function removeSpeakingRecordFiles(record) {
+  const filenames = new Set(
+    (record?.recordings ?? [])
       .map((item) => item.filename)
       .filter((filename) => typeof filename === "string" && !filename.includes(".."))
   );
@@ -48,7 +110,7 @@ export async function removeAudioFiles(record) {
   await Promise.all(
     [...filenames].map(async (filename) => {
       try {
-        await fs.unlink(path.join(audioDir, filename));
+        await fs.unlink(path.join(speakingRecordingDir, filename));
       } catch (error) {
         if (error.code !== "ENOENT") {
           throw error;

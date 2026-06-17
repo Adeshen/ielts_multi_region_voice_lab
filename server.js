@@ -1,15 +1,24 @@
 import "dotenv/config";
 import { promises as fs } from "node:fs";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import express from "express";
 import {
   addHistoryRecord,
+  addSpeakingRecord,
   audioDir,
   ensureStorage,
   readHistory,
+  readSpeakingRecords,
+  recordingDir,
   removeAudioFiles,
-  writeHistory
+  removeSpeakingRecordFiles,
+  speakingRecordingDir,
+  writeHistory,
+  writeSpeakingRecords
 } from "./src/storage.js";
+import { transcribeAudioFile } from "./src/volcengineAsr.js";
+import { analyzeSpeakingAnswer } from "./src/deepseek.js";
 import { listVoices, resolveVoiceIds } from "./src/voices.js";
 import { synthesizeSpeech, validateCredentials } from "./src/volcengine.js";
 
@@ -18,10 +27,194 @@ const host = process.env.HOST || "127.0.0.1";
 const port = Number(process.env.PORT || 3000);
 const publicDir = path.join(process.cwd(), "public");
 const maxTextLength = 2000;
+const maxSpeakingPromptLength = 4000;
+const maxRecordingBytes = 15 * 1024 * 1024;
+const asrAudioBaseUrl = process.env.VOLCENGINE_ASR_AUDIO_BASE_URL?.replace(/\/+$/, "") || "";
+const sitePassword = process.env.SITE_PASSWORD || "";
+const siteSessionSecret = process.env.SITE_SESSION_SECRET || sitePassword || "ielts-voice-lab-dev-secret";
+const authCookieName = "ielts_voice_lab_auth";
+const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
+const recordingTypes = new Map([
+  ["audio/webm", "webm"],
+  ["audio/mp4", "m4a"],
+  ["audio/ogg", "ogg"],
+  ["audio/wav", "wav"],
+  ["audio/mpeg", "mp3"]
+]);
 
-app.use(express.json({ limit: "64kb" }));
+app.use(express.urlencoded({ extended: false }));
+
+function safeCompare(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function signValue(value) {
+  return createHmac("sha256", siteSessionSecret).update(value).digest("hex");
+}
+
+function parseCookies(request) {
+  return Object.fromEntries(
+    String(request.headers.cookie || "")
+      .split(";")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => {
+        const separator = item.indexOf("=");
+        return separator === -1
+          ? [decodeURIComponent(item), ""]
+          : [decodeURIComponent(item.slice(0, separator)), decodeURIComponent(item.slice(separator + 1))];
+      })
+  );
+}
+
+function createSessionToken() {
+  const expiresAt = Date.now() + sessionMaxAgeSeconds * 1000;
+  return `${expiresAt}.${signValue(`session:${expiresAt}`)}`;
+}
+
+function isValidSessionToken(token) {
+  const [expiresAt, signature] = String(token || "").split(".");
+  const expiresAtNumber = Number(expiresAt);
+  if (!Number.isFinite(expiresAtNumber) || expiresAtNumber < Date.now() || !signature) {
+    return false;
+  }
+  return safeCompare(signature, signValue(`session:${expiresAt}`));
+}
+
+function isSecureRequest(request) {
+  return request.secure || request.headers["x-forwarded-proto"] === "https";
+}
+
+function sessionCookie(token, request) {
+  const secure = isSecureRequest(request) ? "; Secure" : "";
+  return `${authCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${sessionMaxAgeSeconds}${secure}`;
+}
+
+function clearSessionCookie(request) {
+  const secure = isSecureRequest(request) ? "; Secure" : "";
+  return `${authCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+}
+
+function isAuthenticated(request) {
+  if (!sitePassword) {
+    return true;
+  }
+  return isValidSessionToken(parseCookies(request)[authCookieName]);
+}
+
+function safeRedirectPath(value) {
+  const nextPath = String(value || "/");
+  if (!nextPath.startsWith("/") || nextPath.startsWith("//") || nextPath.includes("\\")) {
+    return "/";
+  }
+  return nextPath;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function signedAudioToken(filename) {
+  return signValue(`asr-audio:${filename}`);
+}
+
+function hasValidAsrAudioToken(request) {
+  const prefix = "/speaking-recordings/";
+  if (!request.path.startsWith(prefix)) {
+    return false;
+  }
+  const filename = decodeURIComponent(request.path.slice(prefix.length));
+  if (!filename || filename.includes("/") || filename.includes("..")) {
+    return false;
+  }
+  return safeCompare(request.query.asrToken || "", signedAudioToken(filename));
+}
+
+function loginPage({ error = false, next = "/" } = {}) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign In | IELTS Voice Lab</title>
+    <style>
+      :root { color-scheme: light; --bg: #f3f4f6; --surface: #ffffff; --ink: #172033; --muted: #667085; --line: #d8dee8; --accent: #0f766e; --danger: #b42318; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(190, 72, 38, 0.1)), var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      main { width: min(420px, calc(100% - 32px)); padding: 24px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.94); box-shadow: 0 18px 45px rgba(23, 32, 51, 0.1); }
+      p { margin: 0 0 18px; color: var(--muted); line-height: 1.5; }
+      .eyebrow { margin-bottom: 6px; color: var(--accent); font-size: 0.75rem; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }
+      h1 { margin: 0 0 10px; font-size: 1.8rem; line-height: 1; letter-spacing: 0; }
+      label { display: grid; gap: 8px; font-weight: 800; }
+      input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: inherit; }
+      input:focus, button:focus-visible { outline: 3px solid rgba(15, 118, 110, 0.25); outline-offset: 2px; }
+      button { width: 100%; min-height: 44px; margin-top: 14px; border: 0; border-radius: 8px; background: var(--accent); color: white; font: inherit; font-weight: 800; cursor: pointer; }
+      .error { margin-top: 12px; color: var(--danger); font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Protected site</p>
+      <h1>IELTS Voice Lab</h1>
+      <p>Enter the site password before using TTS, ASR, recordings, or local audio files.</p>
+      <form method="post" action="/login">
+        <input type="hidden" name="next" value="${escapeHtml(next)}" />
+        <label>
+          Password
+          <input name="password" type="password" autocomplete="current-password" autofocus required />
+        </label>
+        <button type="submit">Unlock</button>
+      </form>
+      ${error ? '<p class="error">Wrong password. Please try again.</p>' : ""}
+    </main>
+  </body>
+</html>`;
+}
+
+app.get(["/login", "/login.html"], (request, response) => {
+  if (isAuthenticated(request)) {
+    return response.redirect(safeRedirectPath(request.query.next));
+  }
+  response.setHeader("Cache-Control", "no-store");
+  response.type("html").send(loginPage({ error: request.query.error === "1", next: safeRedirectPath(request.query.next) }));
+});
+
+app.post("/login", (request, response) => {
+  const nextPath = safeRedirectPath(request.body?.next);
+  if (!sitePassword || request.body?.password === sitePassword) {
+    response.setHeader("Set-Cookie", sessionCookie(createSessionToken(), request));
+    return response.redirect(nextPath);
+  }
+  response.redirect(`/login?error=1&next=${encodeURIComponent(nextPath)}`);
+});
+
+app.post("/logout", (request, response) => {
+  response.setHeader("Set-Cookie", clearSessionCookie(request));
+  response.redirect("/login");
+});
+
+app.use((request, response, next) => {
+  if (isAuthenticated(request) || hasValidAsrAudioToken(request)) {
+    return next();
+  }
+  if (request.path.startsWith("/api/")) {
+    return response.status(401).json({ error: "Please sign in before using this site." });
+  }
+  response.redirect(`/login?next=${encodeURIComponent(request.originalUrl)}`);
+});
+
+app.use(express.json({ limit: "32mb" }));
 app.use(express.static(publicDir));
 app.use("/audio", express.static(audioDir, { fallthrough: false }));
+app.use("/recordings", express.static(recordingDir, { fallthrough: false }));
+app.use("/speaking-recordings", express.static(speakingRecordingDir, { fallthrough: false }));
 
 function clampNumber(value, fallback, min, max) {
   const numeric = Number(value);
@@ -41,6 +234,42 @@ function publicItemFromVoice({ voice, filename, audioUrl }) {
     filename,
     audioUrl
   };
+}
+
+function parseRecordingUpload(dataUrl) {
+  const match = /^data:([^;,]+)(?:;[^,]*)?;base64,(.+)$/i.exec(String(dataUrl ?? ""));
+  if (!match) {
+    return { error: "Recording upload is invalid." };
+  }
+
+  const mimeType = match[1].toLowerCase();
+  const extension = recordingTypes.get(mimeType);
+  if (!extension) {
+    return { error: "Recording format is not supported by this browser." };
+  }
+
+  const buffer = Buffer.from(match[2], "base64");
+  if (!buffer.length) {
+    return { error: "Recording is empty." };
+  }
+  if (buffer.byteLength > maxRecordingBytes) {
+    return { error: "Recording is too large. Keep it under 15 MB." };
+  }
+
+  return { buffer, extension, mimeType };
+}
+
+function speakingTitleFromPrompt(prompt) {
+  const firstLine = prompt.split(/\r?\n/).find((line) => line.trim())?.trim() || "Speaking prompt";
+  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
+}
+
+function publicSpeakingRecordingUrl(filename) {
+  if (!asrAudioBaseUrl) {
+    return "";
+  }
+  const token = signedAudioToken(filename);
+  return `${asrAudioBaseUrl}/speaking-recordings/${encodeURIComponent(filename)}?asrToken=${token}`;
 }
 
 app.get("/api/voices", (_request, response) => {
@@ -123,6 +352,68 @@ app.post("/api/tts", async (request, response, next) => {
   }
 });
 
+app.post("/api/history/:id/recordings", async (request, response, next) => {
+  try {
+    const history = await readHistory();
+    const record = history.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "History record not found." });
+    }
+
+    const parsed = parseRecordingUpload(request.body?.dataUrl);
+    if (parsed.error) {
+      return response.status(400).json({ error: parsed.error });
+    }
+
+    const recordingId = crypto.randomUUID();
+    const filename = `${record.id}-${recordingId}.${parsed.extension}`;
+    await fs.writeFile(path.join(recordingDir, filename), parsed.buffer);
+
+    const recording = {
+      id: recordingId,
+      filename,
+      audioUrl: `/recordings/${filename}`,
+      mimeType: parsed.mimeType,
+      createdAt: new Date().toISOString()
+    };
+
+    record.recordings = [recording, ...(record.recordings ?? [])];
+    await writeHistory(history);
+    response.status(201).json(recording);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/history/:id/recordings/:recordingId", async (request, response, next) => {
+  try {
+    const history = await readHistory();
+    const record = history.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "History record not found." });
+    }
+
+    const recording = (record.recordings ?? []).find((item) => item.id === request.params.recordingId);
+    if (!recording) {
+      return response.status(404).json({ error: "Recording not found." });
+    }
+
+    if (typeof recording.filename === "string" && !recording.filename.includes("..")) {
+      await fs.unlink(path.join(recordingDir, recording.filename)).catch((error) => {
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
+      });
+    }
+
+    record.recordings = (record.recordings ?? []).filter((item) => item.id !== recording.id);
+    await writeHistory(history);
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.delete("/api/history/:id", async (request, response, next) => {
   try {
     const history = await readHistory();
@@ -144,6 +435,211 @@ app.delete("/api/history", async (_request, response, next) => {
     const history = await readHistory();
     await Promise.all(history.map((record) => removeAudioFiles(record)));
     await writeHistory([]);
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/speaking", async (_request, response, next) => {
+  try {
+    response.json(await readSpeakingRecords());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/speaking", async (request, response, next) => {
+  try {
+    const prompt = String(request.body?.prompt ?? "").trim();
+    if (!prompt) {
+      return response.status(400).json({ error: "Please enter a speaking prompt before saving." });
+    }
+    if (prompt.length > maxSpeakingPromptLength) {
+      return response.status(400).json({ error: `Prompt is too long. Keep it under ${maxSpeakingPromptLength} characters.` });
+    }
+
+    const record = {
+      id: crypto.randomUUID(),
+      title: speakingTitleFromPrompt(prompt),
+      prompt,
+      createdAt: new Date().toISOString(),
+      recordings: []
+    };
+
+    await addSpeakingRecord(record);
+    response.status(201).json(record);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/speaking/:id/recordings", async (request, response, next) => {
+  try {
+    const records = await readSpeakingRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Speaking prompt not found." });
+    }
+
+    const parsed = parseRecordingUpload(request.body?.dataUrl);
+    if (parsed.error) {
+      return response.status(400).json({ error: parsed.error });
+    }
+
+    const recordingId = crypto.randomUUID();
+    const filename = `${record.id}-${recordingId}.${parsed.extension}`;
+    await fs.writeFile(path.join(speakingRecordingDir, filename), parsed.buffer);
+
+    const recording = {
+      id: recordingId,
+      filename,
+      audioUrl: `/speaking-recordings/${filename}`,
+      mimeType: parsed.mimeType,
+      createdAt: new Date().toISOString()
+    };
+
+    record.recordings = [recording, ...(record.recordings ?? [])];
+    await writeSpeakingRecords(records);
+    response.status(201).json(recording);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/speaking/:id/recordings/:recordingId", async (request, response, next) => {
+  try {
+    const records = await readSpeakingRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Speaking prompt not found." });
+    }
+
+    const recording = (record.recordings ?? []).find((item) => item.id === request.params.recordingId);
+    if (!recording) {
+      return response.status(404).json({ error: "Recording not found." });
+    }
+
+    if (typeof recording.filename === "string" && !recording.filename.includes("..")) {
+      await fs.unlink(path.join(speakingRecordingDir, recording.filename)).catch((error) => {
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
+      });
+    }
+
+    record.recordings = (record.recordings ?? []).filter((item) => item.id !== recording.id);
+    await writeSpeakingRecords(records);
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/speaking/:id/recordings/:recordingId/transcribe", async (request, response, next) => {
+  try {
+    const records = await readSpeakingRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Speaking prompt not found." });
+    }
+
+    const recording = (record.recordings ?? []).find((item) => item.id === request.params.recordingId);
+    if (!recording) {
+      return response.status(404).json({ error: "Recording not found." });
+    }
+    if (typeof recording.filename !== "string" || recording.filename.includes("..")) {
+      return response.status(400).json({ error: "Recording filename is invalid." });
+    }
+    if (!asrAudioBaseUrl) {
+      return response.status(400).json({
+        error:
+          "VOLCENGINE_ASR_AUDIO_BASE_URL is not configured. Volcengine recording-file ASR needs a public URL for the audio file, so expose this app with a public HTTPS tunnel first."
+      });
+    }
+    if (!/\.(wav|mp3|ogg|raw)$/i.test(recording.filename)) {
+      return response.status(400).json({
+        error: "This recording format is not supported by Volcengine ASR. Please create a new recording; new speaking recordings are saved as WAV."
+      });
+    }
+
+    await fs.access(path.join(speakingRecordingDir, recording.filename));
+    const transcription = await transcribeAudioFile({
+      audioUrl: publicSpeakingRecordingUrl(recording.filename),
+      filename: recording.filename,
+      prompt: record.prompt
+    });
+
+    recording.transcript = transcription.text;
+    recording.transcription = {
+      provider: transcription.provider,
+      model: transcription.model,
+      createdAt: new Date().toISOString()
+    };
+    await writeSpeakingRecords(records);
+    response.json({ recording, transcript: transcription.text });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/speaking/:id/recordings/:recordingId/analyze", async (request, response, next) => {
+  try {
+    const records = await readSpeakingRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Speaking prompt not found." });
+    }
+
+    const recording = (record.recordings ?? []).find((item) => item.id === request.params.recordingId);
+    if (!recording) {
+      return response.status(404).json({ error: "Recording not found." });
+    }
+
+    const transcript = String(request.body?.transcript ?? "").trim();
+    if (!transcript) {
+      return response.status(400).json({ error: "Please enter the transcript of your spoken answer before analyzing." });
+    }
+    if (transcript.length > maxSpeakingPromptLength) {
+      return response.status(400).json({ error: `Transcript is too long. Keep it under ${maxSpeakingPromptLength} characters.` });
+    }
+
+    const analysis = await analyzeSpeakingAnswer({
+      prompt: record.prompt,
+      transcript
+    });
+
+    recording.transcript = transcript;
+    recording.analysis = analysis;
+    recording.analyzedAt = new Date().toISOString();
+    await writeSpeakingRecords(records);
+    response.json({ recording, analysis });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/speaking/:id", async (request, response, next) => {
+  try {
+    const records = await readSpeakingRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Speaking prompt not found." });
+    }
+
+    await removeSpeakingRecordFiles(record);
+    await writeSpeakingRecords(records.filter((item) => item.id !== record.id));
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/speaking", async (_request, response, next) => {
+  try {
+    const records = await readSpeakingRecords();
+    await Promise.all(records.map((record) => removeSpeakingRecordFiles(record)));
+    await writeSpeakingRecords([]);
     response.status(204).end();
   } catch (error) {
     next(error);

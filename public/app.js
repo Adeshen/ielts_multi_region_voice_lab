@@ -23,6 +23,8 @@ const historyPageSize = 4;
 let historyRecords = [];
 let filteredHistoryRecords = [];
 let historyPage = 1;
+let activeRecording = null;
+let openRecordingPanelId = null;
 
 const sampleSentences = [
   "Some people believe that public transport should be free in large cities.",
@@ -98,6 +100,35 @@ function renderResult(record) {
     .join("");
 }
 
+function renderRecordings(record) {
+  const recordings = record.recordings ?? [];
+  if (!recordings.length) {
+    return '<p class="recording-empty">No learner recordings yet.</p>';
+  }
+
+  return recordings
+    .map(
+      (recording, index) => `
+        <div class="history-audio learner-recording">
+          <div class="recording-title-row">
+            <div>
+              <strong>Your recording ${recordings.length - index}</strong>
+              <span>${escapeHtml(formatDate(recording.createdAt))}</span>
+            </div>
+            <button
+              type="button"
+              class="danger-button compact-button"
+              data-delete-recording="${escapeHtml(recording.id)}"
+              data-record-id="${escapeHtml(record.id)}"
+            >Delete</button>
+          </div>
+          <audio controls preload="metadata" src="${escapeHtml(recording.audioUrl)}"></audio>
+        </div>
+      `
+    )
+    .join("");
+}
+
 function formatErrors(errors = []) {
   if (!errors.length) {
     return "";
@@ -160,6 +191,35 @@ function historySearchText(record) {
   return `${record.text} ${itemText}`.toLowerCase();
 }
 
+function recordingSupported() {
+  return Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+}
+
+function preferredRecordingType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.addEventListener("error", () => reject(reader.error || new Error("Could not read recording.")));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function resetRecordingUi() {
+  if (!activeRecording) {
+    return;
+  }
+
+  activeRecording.stream.getTracks().forEach((track) => track.stop());
+  activeRecording.card.classList.remove("is-recording");
+  activeRecording.startButton.disabled = false;
+  activeRecording.stopButton.disabled = true;
+}
+
 function applyHistoryFilters({ resetPage = true } = {}) {
   const query = historySearchInput.value.trim().toLowerCase();
   const startDate = historyStartDateInput.value;
@@ -213,7 +273,9 @@ function renderHistory() {
   historyEl.className = "history-list";
   historyEl.innerHTML = records
     .map(
-      (record) => `
+      (record) => {
+        const isRecordingPanelOpen = record.id === openRecordingPanelId;
+        return `
         <article class="history-card" data-id="${escapeHtml(record.id)}">
           <div class="history-title-row">
             <div>
@@ -223,6 +285,9 @@ function renderHistory() {
             </div>
             <div class="history-card-actions">
               <button type="button" class="ghost-button" data-practice="${escapeHtml(record.id)}">Rewrite</button>
+              <button type="button" class="ghost-button" data-record-panel="${escapeHtml(record.id)}">
+                ${isRecordingPanelOpen ? "Close" : "Record"}
+              </button>
               <button type="button" class="danger-button" data-delete="${escapeHtml(record.id)}">Delete</button>
             </div>
           </div>
@@ -232,6 +297,16 @@ function renderHistory() {
               <button type="button" class="ghost-button" data-check="${escapeHtml(record.id)}">Check</button>
               <button type="button" class="ghost-button" data-clear-practice="${escapeHtml(record.id)}">Clear</button>
               <span class="rewrite-result"></span>
+            </div>
+          </div>
+          <div class="record-panel" ${isRecordingPanelOpen ? "" : "hidden"}>
+            <div class="record-actions">
+              <button type="button" class="primary-button" data-start-recording="${escapeHtml(record.id)}">Start recording</button>
+              <button type="button" class="ghost-button" data-stop-recording="${escapeHtml(record.id)}" disabled>Stop</button>
+              <span class="record-status">Ready to record your reading.</span>
+            </div>
+            <div class="recordings-list">
+              ${renderRecordings(record)}
             </div>
           </div>
           <div class="history-audios">
@@ -247,7 +322,8 @@ function renderHistory() {
               .join("")}
           </div>
         </article>
-      `
+      `;
+      }
     )
     .join("");
   updateHistoryPager(totalPages);
@@ -316,6 +392,114 @@ sampleButton.addEventListener("click", () => {
 });
 
 historyEl.addEventListener("click", async (event) => {
+  const recordPanelButton = event.target.closest("[data-record-panel]");
+  if (recordPanelButton) {
+    const card = recordPanelButton.closest(".history-card");
+    const panel = card.querySelector(".record-panel");
+    const startButton = card.querySelector("[data-start-recording]");
+    const status = card.querySelector(".record-status");
+    panel.hidden = !panel.hidden;
+    openRecordingPanelId = panel.hidden ? null : recordPanelButton.dataset.recordPanel;
+    recordPanelButton.textContent = panel.hidden ? "Record" : "Close";
+    if (!panel.hidden && !recordingSupported()) {
+      startButton.disabled = true;
+      status.textContent = "Microphone recording is not supported in this browser.";
+    }
+    return;
+  }
+
+  const startRecordingButton = event.target.closest("[data-start-recording]");
+  if (startRecordingButton) {
+    if (!recordingSupported()) {
+      setStatus("Microphone recording is not supported in this browser.", "error");
+      return;
+    }
+    if (activeRecording) {
+      setStatus("Stop the current recording before starting another one.", "error");
+      return;
+    }
+
+    const card = startRecordingButton.closest(".history-card");
+    const recordId = startRecordingButton.dataset.startRecording;
+    const stopButton = card.querySelector("[data-stop-recording]");
+    const status = card.querySelector(".record-status");
+    let stream;
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = preferredRecordingType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const chunks = [];
+
+      recorder.addEventListener("dataavailable", (dataEvent) => {
+        if (dataEvent.data.size > 0) {
+          chunks.push(dataEvent.data);
+        }
+      });
+
+      recorder.addEventListener("stop", async () => {
+        try {
+          status.textContent = "Saving recording...";
+          resetRecordingUi();
+          activeRecording = null;
+          const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
+          const dataUrl = await blobToDataUrl(blob);
+          await apiFetch(`/api/history/${recordId}/recordings`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dataUrl })
+          });
+          openRecordingPanelId = recordId;
+          await loadHistory();
+          setStatus("Recording saved. Play it beside the generated voice.");
+        } catch (error) {
+          activeRecording = null;
+          setStatus(error.message, "error");
+        }
+      });
+
+      recorder.start();
+      activeRecording = {
+        card,
+        recorder,
+        startButton: startRecordingButton,
+        stopButton,
+        stream
+      };
+      card.classList.add("is-recording");
+      startRecordingButton.disabled = true;
+      stopButton.disabled = false;
+      status.textContent = "Recording... read the sentence out loud.";
+      setStatus("Recording from microphone...");
+    } catch (error) {
+      stream?.getTracks().forEach((track) => track.stop());
+      setStatus(error.message || "Could not start microphone recording.", "error");
+    }
+    return;
+  }
+
+  const stopRecordingButton = event.target.closest("[data-stop-recording]");
+  if (stopRecordingButton) {
+    if (!activeRecording || activeRecording.recorder.state === "inactive") {
+      return;
+    }
+    stopRecordingButton.disabled = true;
+    activeRecording.recorder.stop();
+    return;
+  }
+
+  const deleteRecordingButton = event.target.closest("[data-delete-recording]");
+  if (deleteRecordingButton) {
+    await apiFetch(
+      `/api/history/${deleteRecordingButton.dataset.recordId}/recordings/${deleteRecordingButton.dataset.deleteRecording}`,
+      { method: "DELETE" }
+    );
+    openRecordingPanelId = deleteRecordingButton.dataset.recordId;
+    await loadHistory();
+    setStatus("Deleted one learner recording.");
+    return;
+  }
+
   const practiceButton = event.target.closest("[data-practice]");
   if (practiceButton) {
     const card = practiceButton.closest(".history-card");
@@ -360,6 +544,9 @@ historyEl.addEventListener("click", async (event) => {
   }
 
   await apiFetch(`/api/history/${button.dataset.delete}`, { method: "DELETE" });
+  if (openRecordingPanelId === button.dataset.delete) {
+    openRecordingPanelId = null;
+  }
   if (historyPage > 1 && filteredHistoryRecords.length % historyPageSize === 1) {
     historyPage -= 1;
   }

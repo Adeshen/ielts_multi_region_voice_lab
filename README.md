@@ -1,13 +1,20 @@
 # IELTS 多地区英语口语 TTS 网页
 
-一个本地运行的 IELTS 口语练习网页：输入一句英文后，可以同时生成多种英语音色，网页支持在线播放，并把生成过的音频和历史记录保存在本地。
+一个本地运行的 IELTS 口语练习网页：输入一句英文后，可以同时生成多种英语音色；也可以切换到口语录音模式，自己放题目并录制答案。网页支持在线播放，并把音频和历史记录保存在本地。
 
 ## 功能概览
 
 - 一句话生成多种英语音色，适合对比美式、英式、澳洲等发音差异。
 - 支持网页内播放 MP3 音频。
+- 支持在历史记录里直接录制自己的朗读，并和生成音频对比播放。
+- 支持单独的口语录音页面，可以自己输入 IELTS 题目/文段并录制回答。
+- 支持调用豆包 Seed ASR 识别口语录音，再调用 DeepSeek 生成 IELTS 评分、问题诊断和改写范文。
+- 口语分析结果支持折叠/展开，长范文不会把后续录音卡片挤得太远。
+- 支持站点密码保护，避免公开部署后被他人消耗 TTS/ASR/LLM 额度。
 - 支持历史记录展示、单条删除、清空历史。
 - 音频文件保存在本地 `data/audio/`。
+- 跟读录音保存在本地 `data/recordings/`。
+- 口语题目和录音分别保存在本地 `data/speaking-history.json`、`data/speaking-recordings/`。
 - 历史元数据保存在本地 `data/history.json`。
 - 火山引擎凭证只放在 `.env`，不会暴露给前端页面。
 
@@ -45,7 +52,8 @@ http://127.0.0.1:3000
 
 本项目网页入口：
 
-- 本地网页：`http://127.0.0.1:3000`
+- TTS 多音色对比：`http://127.0.0.1:3000`
+- 口语录音模式：`http://127.0.0.1:3000/speaking.html`
 - 本地音频访问示例：`http://127.0.0.1:3000/audio/{filename}.mp3`
 
 开发模式可使用：
@@ -63,6 +71,15 @@ VOLCENGINE_APP_ID=your_app_id_here
 VOLCENGINE_ACCESS_TOKEN=your_access_token_here
 VOLCENGINE_SECRET_KEY=your_secret_key_here
 VOLCENGINE_API_VERSION=v3
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_MODEL=deepseek-chat
+VOLCENGINE_ASR_SUBMIT_ENDPOINT=https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit
+VOLCENGINE_ASR_QUERY_ENDPOINT=https://openspeech.bytedance.com/api/v3/auc/bigmodel/query
+VOLCENGINE_ASR_RESOURCE_ID=volc.seedasr.auc
+VOLCENGINE_ASR_MODEL_NAME=bigmodel
+VOLCENGINE_ASR_AUDIO_BASE_URL=https://your-public-tunnel.example.com
+SITE_PASSWORD=choose_a_site_password_here
+SITE_SESSION_SECRET=generate_a_long_random_session_secret_here
 HOST=127.0.0.1
 PORT=3000
 ```
@@ -70,36 +87,66 @@ PORT=3000
 说明：
 
 - `VOLCENGINE_APP_ID`：火山引擎语音应用 ID。
-- `VOLCENGINE_ACCESS_TOKEN`：TTS 接口访问 Token。
+- `VOLCENGINE_ACCESS_TOKEN`：TTS 和 ASR 接口访问 Token。
 - `VOLCENGINE_SECRET_KEY`：预留配置项，当前 V3 TTS 调用未直接使用。
 - `VOLCENGINE_API_VERSION=v3`：默认使用火山引擎 V3 TTS 接口。
+- `DEEPSEEK_API_KEY`：口语评分和范文改写使用的 DeepSeek API Key。
+- `DEEPSEEK_MODEL=deepseek-chat`：默认分析模型，可按需替换。
+- `VOLCENGINE_ASR_SUBMIT_ENDPOINT`：火山语音录音文件识别提交接口。
+- `VOLCENGINE_ASR_QUERY_ENDPOINT`：火山语音录音文件识别查询接口。
+- `VOLCENGINE_ASR_RESOURCE_ID=volc.seedasr.auc`：豆包录音文件识别 2.0 资源 ID。
+- `VOLCENGINE_ASR_MODEL_NAME=bigmodel`：录音文件识别模型名。
+- `VOLCENGINE_ASR_AUDIO_BASE_URL`：火山 ASR 需要能公网访问录音文件。例如用 ngrok/cloudflared 暴露本地 `http://127.0.0.1:3000` 后，把公网 HTTPS 地址填在这里。
+- `SITE_PASSWORD`：站点访问密码。配置后，网页、API、音频文件都会要求先登录。
+- `SITE_SESSION_SECRET`：登录 cookie 和 ASR 音频签名用的随机密钥，建议使用长随机字符串。
 - `HOST=127.0.0.1`：仅监听本机，避免局域网暴露。
 - `PORT=3000`：本地网页端口。
 
 ## 关键技术点
 
-- **Node.js + Express 后端**  
+- **Node.js + Express 后端**
   使用 Express 提供静态网页、TTS API、历史记录 API 和本地音频静态访问。
 
-- **原生前端 HTML/CSS/JavaScript**  
+- **原生前端 HTML/CSS/JavaScript**
   不依赖 React/Vue，页面轻量，直接通过 `fetch` 调用后端接口。
 
-- **火山引擎 V3 TTS 接口**  
+- **火山引擎 V3 TTS 接口**
   后端调用 `https://openspeech.bytedance.com/api/v3/tts/unidirectional`，使用 `X-Api-App-Id`、`X-Api-Access-Key`、`X-Api-Resource-Id` 等请求头。
 
-- **流式 JSON 音频解析**  
+- **站点密码保护**
+  配置 `SITE_PASSWORD` 后，Express 会用 HttpOnly cookie 保护页面、API 和本地音频文件。火山 ASR 需要读取口语录音，因此后端会给提交到火山的单条录音 URL 自动附加签名 token，而不是公开整个录音目录。
+
+- **流式 JSON 音频解析**
   V3 接口返回多段事件数据，后端会解析每段 JSON 事件，把其中的 base64 音频数据解码并拼接为完整 MP3。
 
-- **本地音频持久化**  
+- **本地音频持久化**
   每次生成的音频写入 `data/audio/{recordId}-{voiceId}.mp3`，网页通过 `/audio/...` 播放。
 
-- **本地历史记录**  
-  每次生成都会写入 `data/history.json`，记录文本、生成时间、音色、音频路径和失败信息。
+- **浏览器麦克风录音**
+  前端支持录制学习者朗读，TTS 跟读录音保存到 `data/recordings/`，口语模式录音保存到 `data/speaking-recordings/`，网页可直接播放，便于和 TTS 音频对比。
 
-- **部分失败容错**  
+- **口语录音模式**
+  新增 `/speaking.html`，可手动输入题目或文段，保存为练习卡片，再录制自己的回答。该模式不调用火山 TTS。
+
+- **DeepSeek 口语分析**
+  对录音填写回答文字稿后，后端调用 DeepSeek 生成 IELTS 维度评分、改进建议、句子修正和更自然的 Band 7.5-8.0 范文。当前分析基于文字稿，不直接识别音频发音。
+
+- **可折叠分析面板**
+  Speaking 页面中每条录音的分析结果默认以摘要形式展示，点击 Expand 才显示句子修正、范文和练习建议，避免历史记录过长时难以切换和定位其他练习卡片。
+
+- **火山语音 ASR 转写**
+  口语录音页面可点击 Transcribe，后端把录音文件的公网 URL 提交到火山语音录音文件识别接口，再轮询查询文字稿并自动填入分析输入框。ASR 复用 `VOLCENGINE_APP_ID` 和 `VOLCENGINE_ACCESS_TOKEN`，不需要把火山凭证暴露到前端。根据官方录音文件识别文档，音频字段使用 `url`，因此纯 `127.0.0.1` 本地地址不能被火山服务器访问。
+
+- **浏览器端 WAV 录音**
+  口语模式使用 Web Audio API 在浏览器端编码 WAV，避免默认 WebM 录音格式不被火山 ASR 支持。
+
+- **本地历史记录**
+  TTS 记录写入 `data/history.json`，口语录音题目写入 `data/speaking-history.json`，分别记录文本、生成时间、音频路径和失败信息。
+
+- **部分失败容错**
   多个音色逐个生成。如果某个音色失败，其他成功音色仍会保存并返回，页面会显示失败原因。
 
-- **凭证隔离**  
+- **凭证隔离**
   `.env` 被 `.gitignore` 忽略，前端页面只看到本地 voice ID，不会看到火山引擎 Token、speaker 或 resource 配置。
 
 ## 参考文档
@@ -109,22 +156,31 @@ PORT=3000
 - 火山引擎 TTS 接入文档：<https://www.volcengine.com/docs/6561/1719100?lang=zh>
 - 火山引擎鉴权/接口相关文档：<https://www.volcengine.com/docs/6561/1359370?lang=zh>
 - 火山引擎 V3 TTS 文档：<https://www.volcengine.com/docs/6561/1598757>
+- 豆包 Seed ASR 模型页：<https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seed-asr-2-0>
+- 豆包录音文件识别文档：<https://www.volcengine.com/docs/6561/1354868?lang=zh>
 
 ## 项目结构
 
 ```text
 .
 ├── public/
-│   ├── index.html      # 前端页面
+│   ├── index.html      # TTS 多音色对比页面
+│   ├── speaking.html   # 口语录音模式页面
 │   ├── styles.css      # 页面样式
-│   └── app.js          # 前端交互逻辑
+│   ├── app.js          # TTS 页面交互逻辑
+│   └── speaking.js     # 口语录音页面交互逻辑
 ├── src/
 │   ├── storage.js      # 本地音频和历史记录读写
+│   ├── volcengineAsr.js # 火山语音 ASR 录音文件识别
+│   ├── deepseek.js     # DeepSeek 口语评分和范文改写
 │   ├── voices.js       # 本地音色 ID 到火山 speaker/resource 的映射
 │   └── volcengine.js   # 火山引擎 TTS 调用与音频解析
 ├── data/
 │   ├── audio/          # 本地生成的 MP3 音频
-│   └── history.json    # 历史记录
+│   ├── recordings/     # 学习者跟读录音
+│   ├── speaking-recordings/ # 口语模式录音
+│   ├── history.json    # TTS 历史记录
+│   └── speaking-history.json # 口语题目记录
 ├── media/
 │   └── example_multi_region.mp4  # 案例演示视频
 ├── server.js           # Express 服务入口
@@ -174,11 +230,77 @@ PORT=3000
 
 ### `DELETE /api/history/:id`
 
-删除单条历史记录，并删除对应 MP3 文件。
+删除单条历史记录，并删除对应 MP3 文件和跟读录音。
+
+### `POST /api/history/:id/recordings`
+
+给某条历史记录追加一条学习者录音。
+
+请求示例：
+
+```json
+{
+  "dataUrl": "data:audio/wav;base64,..."
+}
+```
+
+### `DELETE /api/history/:id/recordings/:recordingId`
+
+删除某条历史记录下的一条学习者录音。
 
 ### `DELETE /api/history`
 
-清空全部历史记录，并删除全部历史音频文件。
+清空全部历史记录，并删除全部历史音频文件和跟读录音。
+
+### `GET /api/speaking`
+
+返回口语录音模式下保存的题目和录音。
+
+### `POST /api/speaking`
+
+保存一个新的口语题目或文段。
+
+请求示例：
+
+```json
+{
+  "prompt": "Describe a time when you learned something useful from another person."
+}
+```
+
+### `POST /api/speaking/:id/recordings`
+
+给某个口语题目追加一条录音。
+
+### `POST /api/speaking/:id/recordings/:recordingId/transcribe`
+
+使用豆包 Seed ASR 对本地录音文件做语音识别，并把返回文字稿保存到该录音。
+
+### `POST /api/speaking/:id/recordings/:recordingId/analyze`
+
+基于题目和回答文字稿生成 IELTS 口语评分、改进建议和改写范文。
+
+请求示例：
+
+```json
+{
+  "transcript": "I want to talk about a useful skill I learned from my friend..."
+}
+```
+
+说明：可以先调用 `transcribe` 自动生成文字稿，再调用 `analyze` 做评分和范文改写。
+
+### `DELETE /api/speaking/:id/recordings/:recordingId`
+
+删除某个口语题目下的一条录音。
+
+### `DELETE /api/speaking/:id`
+
+删除一个口语题目，并删除它下面的全部录音。
+
+### `DELETE /api/speaking`
+
+清空全部口语题目和口语模式录音。
 
 ## 当前音色预设
 
@@ -242,13 +364,23 @@ data/history.json
 node --check server.js
 node --check src/volcengine.js
 node --check src/voices.js
+node --check src/volcengineAsr.js
+node --check src/deepseek.js
 node --check src/storage.js
 node --check public/app.js
+node --check public/speaking.js
 ```
 
 也可以启动服务后，在网页输入一句 IELTS 句子并生成音频，确认：
 
 - 页面显示生成成功。
 - `data/audio/` 下出现 MP3 文件。
+- 点击历史记录里的 Record，可以录制并保存自己的朗读。
+- `data/recordings/` 下出现录音文件。
 - `data/history.json` 写入记录。
 - 历史记录刷新页面后仍然存在。
+- 打开 `/speaking.html`，保存一条题目后可以录制、播放、删除自己的回答。
+- `data/speaking-history.json` 和 `data/speaking-recordings/` 正常写入。
+- 在录音下方点击 Transcribe 自动生成回答文字稿，再点击 Analyze 得到评分和改写范文。
+- 分析结果默认折叠，点击 Expand/Collapse 可以展开或收起长范文。
+- 配置 `SITE_PASSWORD` 后，未登录访问页面会跳转登录页，未登录 API 返回 401；登录后可以正常使用 TTS、ASR 和历史记录。

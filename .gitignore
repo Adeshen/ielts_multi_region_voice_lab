@@ -1,5 +1,8 @@
 .env
 node_modules/
 data/audio/
+data/recordings/
+data/speaking-recordings/
 data/history.json
+data/speaking-history.json
 .DS_Store

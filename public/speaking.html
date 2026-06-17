@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IELTS Speaking Recording</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell speaking-shell">
+      <section class="composer" aria-labelledby="speaking-title">
+        <div class="title-block">
+          <p class="eyebrow">IELTS Speaking Practice</p>
+          <h1 id="speaking-title">Speaking Recording</h1>
+        </div>
+        <nav class="mode-tabs" aria-label="Practice modes">
+          <a class="mode-tab" href="/">TTS comparison</a>
+          <a class="mode-tab is-active" href="/speaking.html">Speaking recording</a>
+          <form class="logout-form" action="/logout" method="post">
+            <button class="mode-tab lock-tab" type="submit">Lock</button>
+          </form>
+        </nav>
+
+        <form id="speaking-form" class="tts-form">
+          <label class="field-label" for="prompt">Question or passage</label>
+          <textarea
+            id="prompt"
+            name="prompt"
+            maxlength="4000"
+            rows="10"
+            placeholder="Describe a time when you learned something useful from another person."
+            required
+          ></textarea>
+
+          <div class="form-meta">
+            <span id="prompt-count">0 / 4000</span>
+            <button type="button" id="prompt-sample" class="ghost-button">Sample</button>
+          </div>
+
+          <button type="submit" id="save-prompt" class="primary-button">Save prompt</button>
+        </form>
+      </section>
+
+      <section class="workspace" aria-live="polite">
+        <div class="history-header">
+          <div>
+            <p class="eyebrow">Recording mode</p>
+            <h2>Speaking prompts</h2>
+          </div>
+          <div class="history-actions">
+            <button type="button" id="clear-speaking" class="ghost-button">Clear</button>
+          </div>
+        </div>
+        <div id="speaking-status" class="status"></div>
+        <div id="speaking-list" class="history-list empty-state">No speaking prompts yet.</div>
+      </section>
+    </main>
+
+    <script src="/speaking.js" type="module"></script>
+  </body>
+</html>

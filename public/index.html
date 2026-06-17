@@ -13,6 +13,13 @@
           <p class="eyebrow">IELTS Speaking Practice</p>
           <h1 id="app-title">Regional English Voice Lab</h1>
         </div>
+        <nav class="mode-tabs" aria-label="Practice modes">
+          <a class="mode-tab is-active" href="/">TTS comparison</a>
+          <a class="mode-tab" href="/speaking.html">Speaking recording</a>
+          <form class="logout-form" action="/logout" method="post">
+            <button class="mode-tab lock-tab" type="submit">Lock</button>
+          </form>
+        </nav>
 
         <form id="tts-form" class="tts-form">
           <label class="field-label" for="text">Sentence</label>
