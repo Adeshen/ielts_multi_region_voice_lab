@@ -691,6 +691,87 @@ input[type="range"] {
   gap: 8px;
 }
 
+.lexical-section {
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 118, 110, 0.04);
+  padding: 10px;
+}
+
+.lexical-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lexical-heading span {
+  border: 1px solid rgba(15, 118, 110, 0.24);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--accent-dark);
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.lexical-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lexical-section h5 {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.analysis-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.analysis-chip-list span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  padding: 4px 8px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.vocab-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.vocab-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.vocab-card strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent-dark);
+  font-size: 0.88rem;
+}
+
+.vocab-card p {
+  margin-bottom: 4px;
+}
+
+.vocab-card.is-muted strong {
+  color: var(--muted);
+}
+
 .analysis-correction {
   border-left: 3px solid rgba(15, 118, 110, 0.3);
   padding-left: 10px;
@@ -810,6 +891,8 @@ input[type="range"] {
   .result-grid,
   .history-audios,
   .analysis-columns,
+  .lexical-grid,
+  .vocab-card-grid,
   .recordings-list,
   .voice-grid-body {
     grid-template-columns: 1fr;

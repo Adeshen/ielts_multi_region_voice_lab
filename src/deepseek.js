@@ -1,3 +1,9 @@
+import {
+  IELTS_CORE_VOCABULARY,
+  IELTS_CORE_VOCABULARY_LABEL,
+  IELTS_MOTHER_TOPICS
+} from "./ieltsVocabulary.js";
+
 const deepseekApiUrl = process.env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions";
 const deepseekModel = process.env.DEEPSEEK_MODEL || "deepseek-chat";
 
@@ -36,7 +42,7 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
     body: JSON.stringify({
       model: deepseekModel,
       temperature: 0.35,
-      max_tokens: 1800,
+      max_tokens: 2800,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -46,6 +52,9 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
             "Score only from the provided transcript, not from audio acoustics.",
             "Return strict JSON with no markdown.",
             "Use half-band IELTS scores from 0 to 9.",
+            "Use the provided IELTS mother-topic list and core vocabulary bank as coaching references.",
+            "Identify the closest mother-topic family, then evaluate lexical resource through both accuracy and natural topic vocabulary.",
+            "Do not force vocabulary stuffing: recommend and use only words that fit the learner's answer naturally.",
             "Generate a natural Band 7.5-8.0 model answer based on the learner's ideas, not a generic unrelated answer."
           ].join(" ")
         },
@@ -55,6 +64,17 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
             task: "Evaluate this IELTS speaking response and rewrite it into a stronger model answer.",
             questionOrPrompt: prompt,
             learnerTranscript: transcript,
+            motherTopicOptions: IELTS_MOTHER_TOPICS,
+            coreVocabularySource: IELTS_CORE_VOCABULARY_LABEL,
+            coreVocabularyBank: IELTS_CORE_VOCABULARY,
+            vocabularyPolicy: [
+              "Choose one closest mother topic from motherTopicOptions.",
+              "Find core vocabulary already used naturally in the learner transcript.",
+              "Recommend 5 to 10 useful core words or phrases from coreVocabularyBank that match this prompt and answer.",
+              "Give a short sample phrase for each recommended word so the learner can practice it in context.",
+              "List any tempting core words that should be avoided for this answer because they would sound forced or unrelated.",
+              "Use several relevant target words naturally in the model answer, but keep the answer fluent and human."
+            ],
             requiredJsonShape: {
               overallBand: "number",
               criteria: {
@@ -63,9 +83,26 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
                 grammarRangeAccuracy: "number",
                 pronunciationEstimate: "number or null"
               },
+              topicFamily: "closest mother-topic label from motherTopicOptions",
               summary: "short overall diagnosis",
               strengths: ["specific strengths"],
               improvements: ["specific problems to fix"],
+              lexicalCoverage: {
+                usedCoreVocabulary: ["core vocabulary words or phrases already used naturally"],
+                missedOpportunities: [
+                  {
+                    word: "useful core vocabulary item",
+                    whyUseful: "why this word fits the answer",
+                    samplePhrase: "short phrase showing natural use"
+                  }
+                ],
+                wordsToAvoidForThisTopic: [
+                  {
+                    word: "core vocabulary item",
+                    reason: "why it would be forced or unrelated here"
+                  }
+                ]
+              },
               sentenceCorrections: [
                 {
                   original: "learner phrase or sentence",
@@ -74,6 +111,7 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
                 }
               ],
               modelAnswer: "improved sample answer using the learner's original content and IELTS style",
+              modelAnswerTargetWords: ["core vocabulary intentionally used in the model answer"],
               practiceTip: "one focused next step",
               limitation: "mention that pronunciation is only estimated from transcript unless real speech recognition/phonetic analysis is added"
             }

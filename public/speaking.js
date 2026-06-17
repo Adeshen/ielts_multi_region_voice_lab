@@ -138,6 +138,69 @@ function analysisBand(analysis) {
   return value ? `Band ${value}` : "";
 }
 
+function renderChipList(items, emptyText) {
+  const values = (items ?? []).filter(Boolean);
+  if (!values.length) {
+    return `<p class="muted">${escapeHtml(emptyText)}</p>`;
+  }
+
+  return `
+    <div class="analysis-chip-list">
+      ${values.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+    </div>
+  `;
+}
+
+function renderLexicalCoverage(analysis) {
+  const coverage = analysis.lexicalCoverage;
+  if (!coverage) {
+    return "";
+  }
+
+  const missedOpportunities = (coverage.missedOpportunities ?? [])
+    .map(
+      (item) => `
+        <div class="vocab-card">
+          <strong>${escapeHtml(item.word ?? "")}</strong>
+          <p>${escapeHtml(item.whyUseful ?? "")}</p>
+          <p class="muted">${escapeHtml(item.samplePhrase ?? "")}</p>
+        </div>
+      `
+    )
+    .join("");
+  const wordsToAvoid = (coverage.wordsToAvoidForThisTopic ?? [])
+    .map(
+      (item) => `
+        <div class="vocab-card is-muted">
+          <strong>${escapeHtml(item.word ?? "")}</strong>
+          <p>${escapeHtml(item.reason ?? "")}</p>
+        </div>
+      `
+    )
+    .join("");
+
+  return `
+    <div class="analysis-section lexical-section">
+      <div class="lexical-heading">
+        <h4>Core vocabulary alignment</h4>
+        ${analysis.topicFamily ? `<span>${escapeHtml(analysis.topicFamily)}</span>` : ""}
+      </div>
+      <div class="lexical-grid">
+        <div>
+          <h5>Already used</h5>
+          ${renderChipList(coverage.usedCoreVocabulary, "No clear core vocabulary match found yet.")}
+        </div>
+        <div>
+          <h5>Model answer targets</h5>
+          ${renderChipList(analysis.modelAnswerTargetWords, "No target words reported.")}
+        </div>
+      </div>
+      ${missedOpportunities ? `<div><h5>Good next words</h5><div class="vocab-card-grid">${missedOpportunities}</div></div>` : ""}
+      ${wordsToAvoid ? `<div><h5>Avoid forcing</h5><div class="vocab-card-grid">${wordsToAvoid}</div></div>` : ""}
+    </div>
+  `;
+}
+
 function renderAnalysis(analysis, recordingId) {
   if (!analysis) {
     return "";
@@ -190,6 +253,7 @@ function renderAnalysis(analysis, recordingId) {
             <ul>${improvements}</ul>
           </div>
         </div>
+        ${renderLexicalCoverage(analysis)}
         ${corrections ? `<div class="analysis-section"><h4>Sentence fixes</h4>${corrections}</div>` : ""}
         <div class="analysis-section">
           <h4>Model answer</h4>
