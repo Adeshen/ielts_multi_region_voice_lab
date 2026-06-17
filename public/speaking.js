@@ -201,6 +201,37 @@ function renderLexicalCoverage(analysis) {
   `;
 }
 
+function renderCueCardNotes(analysis) {
+  const keywords = (analysis.cueCardKeywords ?? []).filter(Boolean);
+  const route = (analysis.speakingRoute ?? []).filter(Boolean);
+  if (!keywords.length && !route.length) {
+    return "";
+  }
+
+  const routeCards = route
+    .map(
+      (item) => `
+        <div class="cue-route-card">
+          <strong>${escapeHtml(item.stage ?? "")}</strong>
+          ${renderChipList(item.keywords, "No route keywords reported.")}
+          <p class="muted">${escapeHtml(item.purpose ?? "")}</p>
+        </div>
+      `
+    )
+    .join("");
+
+  return `
+    <div class="analysis-section cue-section">
+      <div class="lexical-heading">
+        <h4>Part 2 cue-card notes</h4>
+        <span>1-minute prep</span>
+      </div>
+      ${renderChipList(keywords, "No cue-card keywords reported.")}
+      ${routeCards ? `<div class="cue-route-grid">${routeCards}</div>` : ""}
+    </div>
+  `;
+}
+
 function renderAnalysis(analysis, recordingId) {
   if (!analysis) {
     return "";
@@ -255,6 +286,7 @@ function renderAnalysis(analysis, recordingId) {
         </div>
         ${renderLexicalCoverage(analysis)}
         ${corrections ? `<div class="analysis-section"><h4>Sentence fixes</h4>${corrections}</div>` : ""}
+        ${renderCueCardNotes(analysis)}
         <div class="analysis-section">
           <h4>Model answer</h4>
           <p class="model-answer">${escapeHtml(analysis.modelAnswer ?? "")}</p>

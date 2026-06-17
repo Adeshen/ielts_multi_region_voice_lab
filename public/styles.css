@@ -772,6 +772,38 @@ input[type="range"] {
   color: var(--muted);
 }
 
+.cue-section {
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.04);
+  padding: 10px;
+}
+
+.cue-section .lexical-heading span {
+  border-color: rgba(37, 99, 235, 0.24);
+  color: #1d4ed8;
+}
+
+.cue-route-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cue-route-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.cue-route-card strong {
+  color: #1d4ed8;
+  font-size: 0.88rem;
+}
+
 .analysis-correction {
   border-left: 3px solid rgba(15, 118, 110, 0.3);
   padding-left: 10px;
@@ -893,6 +925,7 @@ input[type="range"] {
   .analysis-columns,
   .lexical-grid,
   .vocab-card-grid,
+  .cue-route-grid,
   .recordings-list,
   .voice-grid-body {
     grid-template-columns: 1fr;

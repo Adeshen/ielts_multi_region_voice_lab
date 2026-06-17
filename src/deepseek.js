@@ -73,7 +73,8 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
               "Recommend 5 to 10 useful core words or phrases from coreVocabularyBank that match this prompt and answer.",
               "Give a short sample phrase for each recommended word so the learner can practice it in context.",
               "List any tempting core words that should be avoided for this answer because they would sound forced or unrelated.",
-              "Use several relevant target words naturally in the model answer, but keep the answer fluent and human."
+              "Use several relevant target words naturally in the model answer, but keep the answer fluent and human.",
+              "Create Part 2 cue-card keywords that are short enough to write during the one-minute preparation time."
             ],
             requiredJsonShape: {
               overallBand: "number",
@@ -112,6 +113,14 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
               ],
               modelAnswer: "improved sample answer using the learner's original content and IELTS style",
               modelAnswerTargetWords: ["core vocabulary intentionally used in the model answer"],
+              cueCardKeywords: ["8 to 14 very short keywords or phrases from the model answer, suitable for handwritten Part 2 notes"],
+              speakingRoute: [
+                {
+                  stage: "opening / background / details / feeling / ending",
+                  keywords: ["2 to 5 note-style keywords"],
+                  purpose: "how these keywords help the learner speak"
+                }
+              ],
               practiceTip: "one focused next step",
               limitation: "mention that pronunciation is only estimated from transcript unless real speech recognition/phonetic analysis is added"
             }
