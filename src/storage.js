@@ -137,6 +137,10 @@ export async function removeSpeakingRecordFiles(record) {
 }
 
 export async function removeDictationRecordFiles(record) {
+  if (record?.ownsAudioFile === false) {
+    return;
+  }
+
   const filenames = new Set(
     [record?.filename].filter((filename) => typeof filename === "string" && !filename.includes(".."))
   );

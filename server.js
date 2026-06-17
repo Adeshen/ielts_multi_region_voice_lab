@@ -502,6 +502,57 @@ app.post("/api/dictation", async (request, response, next) => {
   }
 });
 
+app.post("/api/dictation/from-history", async (request, response, next) => {
+  try {
+    const history = await readHistory();
+    const sourceRecord = history.find((item) => item.id === request.body?.historyId);
+    if (!sourceRecord) {
+      return response.status(404).json({ error: "TTS history record not found." });
+    }
+
+    const sourceItem = (sourceRecord.items ?? []).find((item) => item.voiceId === request.body?.voiceId);
+    if (!sourceItem) {
+      return response.status(404).json({ error: "Selected history audio was not found." });
+    }
+    if (typeof sourceItem.filename !== "string" || sourceItem.filename.includes("..")) {
+      return response.status(400).json({ error: "Selected history audio cannot be reused." });
+    }
+
+    const records = await readDictationRecords();
+    const existing = records.find((record) => record.sourceHistoryId === sourceRecord.id && record.sourceVoiceId === sourceItem.voiceId);
+    if (existing) {
+      return response.json(existing);
+    }
+
+    const record = {
+      id: crypto.randomUUID(),
+      sourceText: sourceRecord.text,
+      createdAt: new Date().toISOString(),
+      speedRatio: sourceRecord.speedRatio ?? 1,
+      volumeRatio: sourceRecord.volumeRatio ?? 1,
+      filename: sourceItem.filename,
+      audioUrl: sourceItem.audioUrl,
+      voice: {
+        voiceId: sourceItem.voiceId,
+        label: sourceItem.label,
+        shortLabel: sourceItem.shortLabel,
+        region: sourceItem.region,
+        gender: sourceItem.gender
+      },
+      source: "tts-history",
+      sourceHistoryId: sourceRecord.id,
+      sourceVoiceId: sourceItem.voiceId,
+      ownsAudioFile: false,
+      attempts: []
+    };
+
+    await addDictationRecord(record);
+    response.status(201).json(record);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/dictation/:id/check", async (request, response, next) => {
   try {
     const records = await readDictationRecords();

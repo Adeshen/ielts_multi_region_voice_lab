@@ -314,7 +314,15 @@ function renderHistory() {
               .map(
                 (item) => `
                   <div class="history-audio">
-                    <strong>${escapeHtml(item.shortLabel || item.label)}</strong>
+                    <div class="recording-title-row">
+                      <strong>${escapeHtml(item.shortLabel || item.label)}</strong>
+                      <button
+                        type="button"
+                        class="ghost-button compact-button"
+                        data-dictation-from-history="${escapeHtml(record.id)}"
+                        data-voice-id="${escapeHtml(item.voiceId)}"
+                      >Dictation</button>
+                    </div>
                     <audio controls preload="metadata" src="${escapeHtml(item.audioUrl)}"></audio>
                   </div>
                 `
@@ -512,6 +520,28 @@ historyEl.addEventListener("click", async (event) => {
     hiddenText.hidden = panel.hidden;
     if (!panel.hidden) {
       card.querySelector(".rewrite-input").focus();
+    }
+    return;
+  }
+
+  const dictationButton = event.target.closest("[data-dictation-from-history]");
+  if (dictationButton) {
+    dictationButton.disabled = true;
+    dictationButton.textContent = "Adding...";
+    try {
+      const record = await apiFetch("/api/dictation/from-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          historyId: dictationButton.dataset.dictationFromHistory,
+          voiceId: dictationButton.dataset.voiceId
+        })
+      });
+      window.location.href = `/dictation.html?record=${encodeURIComponent(record.id)}`;
+    } catch (error) {
+      dictationButton.disabled = false;
+      dictationButton.textContent = "Dictation";
+      setStatus(error.message, "error");
     }
     return;
   }

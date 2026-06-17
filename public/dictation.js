@@ -160,7 +160,7 @@ function renderPracticeCard(record, { current = false } = {}) {
         <div>
           <p class="eyebrow">${escapeHtml(formatDate(record.createdAt))}</p>
           <h3>${escapeHtml(record.voice?.shortLabel ?? record.voice?.label ?? "Dictation audio")}</h3>
-          <p class="muted">Speed ${escapeHtml(record.speedRatio ?? "-")}x</p>
+          <p class="muted">Speed ${escapeHtml(record.speedRatio ?? "-")}x${record.source === "tts-history" ? " · reused from TTS comparison" : ""}</p>
         </div>
         <div class="history-card-actions">
           ${
@@ -218,6 +218,13 @@ function renderHistory() {
 
 async function loadRecords() {
   records = await apiFetch("/api/dictation");
+  const requestedRecordId = new URLSearchParams(window.location.search).get("record");
+  if (requestedRecordId && !activeRecord) {
+    activeRecord = records.find((record) => record.id === requestedRecordId) ?? null;
+    if (activeRecord) {
+      setStatus("Loaded reused audio from TTS comparison. Listen first, then type what you heard.");
+    }
+  }
   if (activeRecord) {
     activeRecord = records.find((record) => record.id === activeRecord.id) ?? activeRecord;
   }
