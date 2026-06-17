@@ -632,14 +632,6 @@ input[type="range"] {
   margin-bottom: 0;
 }
 
-.analysis-panel.is-collapsed .analysis-summary {
-  display: -webkit-box;
-  max-height: 3.1em;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .analysis-body {
   display: grid;
   gap: 10px;

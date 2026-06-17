@@ -172,8 +172,8 @@ function renderAnalysis(analysis, recordingId) {
           aria-controls="${escapeHtml(panelId)}"
         >${isExpanded ? "Collapse" : "Expand"}</button>
       </div>
-      <p class="analysis-summary">${escapeHtml(analysis.summary ?? "")}</p>
       <div id="${escapeHtml(panelId)}" class="analysis-body" ${isExpanded ? "" : "hidden"}>
+        <p class="analysis-summary">${escapeHtml(analysis.summary ?? "")}</p>
         <div class="analysis-columns">
           <div>
             <h4>Strengths</h4>
