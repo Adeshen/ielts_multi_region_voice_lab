@@ -6,7 +6,7 @@
 
 - 一句话生成多种英语音色，适合对比美式、英式、澳洲等发音差异。
 - 支持网页内播放 MP3 音频。
-- 支持 Dictation 听写模式：可生成新听写音频，也可直接复用 Audio comparison 历史音频；输入答案后自动评分和标出错词。
+- 支持 Dictation 听写模式：可生成新听写音频，也可直接复用 Audio comparison 历史音频；输入答案后自动评分和标出错词，并可选用 DeepSeek 做更灵活的 AI 复核。
 - 支持在历史记录里直接录制自己的朗读，并和生成音频对比播放。
 - 支持单独的口语录音页面，可以自己输入 IELTS 题目/文段并录制回答。
 - 支持调用豆包 Seed ASR 识别口语录音，再调用 DeepSeek 生成 IELTS 评分、问题诊断和改写范文。
@@ -129,6 +129,9 @@ PORT=3000
 
 - **Dictation 听写训练**
   新增 `/dictation.html`。用户输入句子后选择音色和语速生成听写音频，页面默认隐藏原文；也可以在 Audio comparison 历史音频旁点击 Dictation，直接复用已经生成的 MP3，不再次调用火山 TTS。提交听写答案后，后端做词级 diff，返回正确词、漏听词、多写词、拼写相近词、wrong word、function words 漏听和 179 高频核心词命中情况。
+
+- **DeepSeek 听写复核**
+  Dictation 的基础评分使用本地程序，速度快且不消耗 LLM。每次听写尝试也可以点击 AI review，由 DeepSeek 复核原句和学习者答案，更灵活地区分可接受拼写/词形变化、真正影响理解的错误、可能的弱读/连读/尾音问题，并给出下一步训练建议。
 
 - **浏览器麦克风录音**
   前端支持录制学习者朗读，TTS 跟读录音保存到 `data/recordings/`，口语模式录音保存到 `data/speaking-recordings/`，网页可直接播放，便于和 TTS 音频对比。
@@ -298,6 +301,10 @@ PORT=3000
   "userText": "The costal environment is home to many rare spaces."
 }
 ```
+
+### `POST /api/dictation/:id/attempts/:attemptId/review`
+
+对某次听写尝试调用 DeepSeek 做 AI 复核。基础 `check` 不会自动调用 DeepSeek，只有点击 AI review 时才会消耗 LLM 额度。
 
 ### `POST /api/dictation/from-history`
 

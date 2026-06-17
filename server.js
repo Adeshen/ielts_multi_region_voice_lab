@@ -22,7 +22,7 @@ import {
   writeSpeakingRecords
 } from "./src/storage.js";
 import { transcribeAudioFile } from "./src/volcengineAsr.js";
-import { analyzeSpeakingAnswer } from "./src/deepseek.js";
+import { analyzeSpeakingAnswer, reviewDictationAttempt } from "./src/deepseek.js";
 import { compareDictation } from "./src/dictation.js";
 import { listVoices, resolveVoiceIds } from "./src/voices.js";
 import { synthesizeSpeech, validateCredentials } from "./src/volcengine.js";
@@ -580,6 +580,44 @@ app.post("/api/dictation/:id/check", async (request, response, next) => {
     record.attempts = [attempt, ...(record.attempts ?? [])].slice(0, 20);
     await writeDictationRecords(records);
     response.json({ record, attempt });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/dictation/:id/attempts/:attemptId/review", async (request, response, next) => {
+  try {
+    const records = await readDictationRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Dictation record not found." });
+    }
+
+    const attempt = (record.attempts ?? []).find((item) => item.id === request.params.attemptId);
+    if (!attempt) {
+      return response.status(404).json({ error: "Dictation attempt not found." });
+    }
+
+    const aiReview = await reviewDictationAttempt({
+      sourceText: record.sourceText,
+      userText: attempt.userText,
+      deterministicResult: {
+        score: attempt.score,
+        operations: attempt.operations,
+        mistakes: attempt.mistakes,
+        missingFunctionWords: attempt.missingFunctionWords,
+        coreVocabulary: attempt.coreVocabulary
+      }
+    });
+
+    attempt.aiReview = {
+      ...aiReview,
+      provider: "deepseek",
+      model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+      createdAt: new Date().toISOString()
+    };
+    await writeDictationRecords(records);
+    response.json({ record, attempt, aiReview: attempt.aiReview });
   } catch (error) {
     next(error);
   }

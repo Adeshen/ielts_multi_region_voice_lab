@@ -139,3 +139,73 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
   const content = payload.choices?.[0]?.message?.content;
   return extractJsonObject(content);
 }
+
+export async function reviewDictationAttempt({ sourceText, userText, deterministicResult }) {
+  validateDeepseekCredentials();
+
+  const response = await fetch(deepseekApiUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: deepseekModel,
+      temperature: 0.2,
+      max_tokens: 1800,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You are an IELTS listening dictation coach.",
+            "Compare the target sentence with the learner's typed dictation.",
+            "Be more flexible than a raw word diff: consider spelling slips, contractions, plural/singular, near-homophones, word boundary mistakes, and acceptable variants.",
+            "Do not invent words that are not supported by the target or learner answer.",
+            "Return strict JSON with no markdown."
+          ].join(" ")
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            task: "Review this IELTS dictation attempt and give a teacher-like judgement.",
+            sourceText,
+            learnerDictation: userText,
+            rawProgramResult: deterministicResult,
+            requiredJsonShape: {
+              aiScore: "integer from 0 to 100",
+              judgement: "short overall diagnosis",
+              acceptedMatches: [
+                {
+                  expected: "target word or phrase",
+                  actual: "learner word or phrase",
+                  reason: "why this can be treated as acceptable or minor"
+                }
+              ],
+              criticalMistakes: [
+                {
+                  expected: "target word or phrase",
+                  actual: "learner word or phrase, or empty if missing",
+                  type: "missing / wrong_word / spelling / word_boundary / grammar_word / extra",
+                  impact: "why it matters for listening accuracy"
+                }
+              ],
+              likelyListeningIssues: ["weak forms, linking, final consonants, vowel contrast, plural ending, word boundary, spelling, etc."],
+              correctedDictation: "the correct sentence",
+              practiceAdvice: "one focused drill for the next attempt"
+            }
+          })
+        }
+      ]
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload.error?.message || payload.message || `DeepSeek request failed with ${response.status}.`;
+    throw new Error(message);
+  }
+
+  const content = payload.choices?.[0]?.message?.content;
+  return extractJsonObject(content);
+}

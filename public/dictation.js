@@ -94,7 +94,52 @@ function renderDiff(operations = []) {
   return `<div class="dictation-diff">${tokens}</div>`;
 }
 
-function renderMistakes(attempt) {
+function renderAiReview(aiReview) {
+  if (!aiReview) {
+    return "";
+  }
+
+  const acceptedMatches = (aiReview.acceptedMatches ?? [])
+    .map(
+      (item) => `
+        <li>
+          <strong>${escapeHtml(item.actual ?? "")} → ${escapeHtml(item.expected ?? "")}</strong>
+          <span>${escapeHtml(item.reason ?? "")}</span>
+        </li>
+      `
+    )
+    .join("");
+  const criticalMistakes = (aiReview.criticalMistakes ?? [])
+    .map(
+      (item) => `
+        <li>
+          <strong>${escapeHtml(item.type ?? "mistake")}: ${escapeHtml(item.actual ?? "")} → ${escapeHtml(item.expected ?? "")}</strong>
+          <span>${escapeHtml(item.impact ?? "")}</span>
+        </li>
+      `
+    )
+    .join("");
+
+  return `
+    <div class="ai-review-panel">
+      <div class="dictation-score-row">
+        <span class="dictation-score">AI ${escapeHtml(aiReview.aiScore ?? "-")}%</span>
+        <span>${escapeHtml(aiReview.model ?? "DeepSeek")}</span>
+      </div>
+      <p>${escapeHtml(aiReview.judgement ?? "")}</p>
+      ${
+        aiReview.likelyListeningIssues?.length
+          ? `<p class="muted">Likely issues: ${escapeHtml(aiReview.likelyListeningIssues.join(", "))}</p>`
+          : ""
+      }
+      ${acceptedMatches ? `<div><h4>Accepted or minor</h4><ul class="dictation-mistakes">${acceptedMatches}</ul></div>` : ""}
+      ${criticalMistakes ? `<div><h4>Critical mistakes</h4><ul class="dictation-mistakes">${criticalMistakes}</ul></div>` : ""}
+      ${aiReview.practiceAdvice ? `<p class="muted">${escapeHtml(aiReview.practiceAdvice)}</p>` : ""}
+    </div>
+  `;
+}
+
+function renderMistakes(attempt, record) {
   if (!attempt) {
     return "";
   }
@@ -147,6 +192,13 @@ function renderMistakes(attempt) {
           : ""
       }
       ${mistakeItems ? `<ul class="dictation-mistakes">${mistakeItems}</ul>` : ""}
+      <button
+        type="button"
+        class="ghost-button compact-button"
+        data-review-dictation="${escapeHtml(record.id)}"
+        data-attempt-id="${escapeHtml(attempt.id)}"
+      >${attempt.aiReview ? "Run AI review again" : "AI review"}</button>
+      ${renderAiReview(attempt.aiReview)}
     </div>
   `;
 }
@@ -189,7 +241,7 @@ function renderPracticeCard(record, { current = false } = {}) {
         <button type="submit" class="primary-button compact-button">Check answer</button>
       </form>
       ${isRevealed ? `<p class="dictation-source">${escapeHtml(record.sourceText)}</p>` : ""}
-      ${attempt ? renderMistakes(attempt) : ""}
+      ${attempt ? renderMistakes(attempt, record) : ""}
     </article>
   `;
 }
@@ -314,6 +366,26 @@ document.addEventListener("click", async (event) => {
     }
     renderCurrent();
     renderHistory();
+    return;
+  }
+
+  const reviewButton = event.target.closest("[data-review-dictation]");
+  if (reviewButton) {
+    reviewButton.disabled = true;
+    reviewButton.textContent = "Reviewing...";
+    try {
+      const payload = await apiFetch(
+        `/api/dictation/${reviewButton.dataset.reviewDictation}/attempts/${reviewButton.dataset.attemptId}/review`,
+        { method: "POST" }
+      );
+      activeRecord = payload.record;
+      await loadRecords();
+      setStatus(`AI review ready. DeepSeek score ${payload.aiReview.aiScore ?? "-"}%.`);
+    } catch (error) {
+      reviewButton.disabled = false;
+      reviewButton.textContent = "AI review";
+      setStatus(error.message, "error");
+    }
     return;
   }
 
