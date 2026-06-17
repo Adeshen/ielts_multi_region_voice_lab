@@ -9,6 +9,7 @@ const listEl = document.querySelector("#speaking-list");
 
 let records = [];
 let activeRecording = null;
+const expandedRecordings = new Set();
 const expandedAnalyses = new Set();
 
 const samples = [
@@ -132,6 +133,11 @@ function audioFrameFor(audio) {
   return audio.closest(".history-audio");
 }
 
+function analysisBand(analysis) {
+  const value = analysis?.overallBand;
+  return value ? `Band ${value}` : "";
+}
+
 function renderAnalysis(analysis, recordingId) {
   if (!analysis) {
     return "";
@@ -204,48 +210,78 @@ function renderRecordings(record) {
 
   return recordings
     .map(
-      (recording, index) => `
-        <div class="history-audio learner-recording">
+      (recording, index) => {
+        const hasTranscript = Boolean(recording.transcript);
+        const hasAnalysis = Boolean(recording.analysis);
+        const isExpanded = expandedRecordings.has(recording.id) || (!hasTranscript && !hasAnalysis);
+        const bandLabel = analysisBand(recording.analysis);
+        const statusTags = [
+          hasTranscript ? "Transcript ready" : "",
+          bandLabel,
+          hasAnalysis ? "Analysis ready" : ""
+        ]
+          .filter(Boolean)
+          .map((item) => `<span>${escapeHtml(item)}</span>`)
+          .join("");
+
+        return `
+        <div class="history-audio learner-recording ${isExpanded ? "is-expanded" : "is-collapsed"}">
           <div class="recording-title-row">
             <div>
               <strong>Practice recording ${recordings.length - index}</strong>
               <span>${escapeHtml(formatDate(recording.createdAt))}</span>
+              ${statusTags ? `<div class="recording-compact-meta">${statusTags}</div>` : ""}
             </div>
-            <button
-              type="button"
-              class="danger-button compact-button"
-              data-delete-recording="${escapeHtml(recording.id)}"
-              data-record-id="${escapeHtml(record.id)}"
-            >Delete</button>
+            <div class="recording-title-actions">
+              <button
+                type="button"
+                class="ghost-button compact-button"
+                data-toggle-recording="${escapeHtml(recording.id)}"
+                aria-expanded="${isExpanded ? "true" : "false"}"
+              >${isExpanded ? "Compact" : "Expand"}</button>
+              <button
+                type="button"
+                class="danger-button compact-button"
+                data-delete-recording="${escapeHtml(recording.id)}"
+                data-record-id="${escapeHtml(record.id)}"
+              >Delete</button>
+            </div>
           </div>
-          <audio controls preload="metadata" src="${escapeHtml(recording.audioUrl)}"></audio>
-          <div class="transcript-panel">
-            <label>
-              <span>Answer transcript</span>
-              <textarea
-                class="transcript-input"
-                rows="4"
-                maxlength="4000"
-                placeholder="Paste or type what you said in this recording."
-                data-transcript="${escapeHtml(recording.id)}"
-              >${escapeHtml(recording.transcript ?? "")}</textarea>
-            </label>
-            <button
-              type="button"
-              class="ghost-button"
-              data-transcribe-recording="${escapeHtml(recording.id)}"
-              data-record-id="${escapeHtml(record.id)}"
-            >Transcribe</button>
-            <button
-              type="button"
-              class="ghost-button"
-              data-analyze-recording="${escapeHtml(recording.id)}"
-              data-record-id="${escapeHtml(record.id)}"
-            >Analyze</button>
-          </div>
-          ${renderAnalysis(recording.analysis, recording.id)}
+          ${
+            isExpanded
+              ? `
+                <audio controls preload="metadata" src="${escapeHtml(recording.audioUrl)}"></audio>
+                <div class="transcript-panel">
+                  <label>
+                    <span>Answer transcript</span>
+                    <textarea
+                      class="transcript-input"
+                      rows="4"
+                      maxlength="4000"
+                      placeholder="Paste or type what you said in this recording."
+                      data-transcript="${escapeHtml(recording.id)}"
+                    >${escapeHtml(recording.transcript ?? "")}</textarea>
+                  </label>
+                  <button
+                    type="button"
+                    class="ghost-button"
+                    data-transcribe-recording="${escapeHtml(recording.id)}"
+                    data-record-id="${escapeHtml(record.id)}"
+                  >Transcribe</button>
+                  <button
+                    type="button"
+                    class="ghost-button"
+                    data-analyze-recording="${escapeHtml(recording.id)}"
+                    data-record-id="${escapeHtml(record.id)}"
+                  >Analyze</button>
+                </div>
+                ${renderAnalysis(recording.analysis, recording.id)}
+              `
+              : ""
+          }
         </div>
-      `
+      `;
+      }
     )
     .join("");
 }
@@ -393,11 +429,12 @@ listEl.addEventListener("click", async (event) => {
       resetRecordingUi();
       activeRecording = null;
       const dataUrl = await blobToDataUrl(blob);
-      await apiFetch(`/api/speaking/${recording.card.dataset.id}/recordings`, {
+      const savedRecording = await apiFetch(`/api/speaking/${recording.card.dataset.id}/recordings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dataUrl })
       });
+      expandedRecordings.add(savedRecording.id);
       await loadRecords();
       setStatus("Recording saved.");
     } catch (error) {
@@ -413,8 +450,22 @@ listEl.addEventListener("click", async (event) => {
       `/api/speaking/${deleteRecordingButton.dataset.recordId}/recordings/${deleteRecordingButton.dataset.deleteRecording}`,
       { method: "DELETE" }
     );
+    expandedRecordings.delete(deleteRecordingButton.dataset.deleteRecording);
+    expandedAnalyses.delete(deleteRecordingButton.dataset.deleteRecording);
     await loadRecords();
     setStatus("Deleted one recording.");
+    return;
+  }
+
+  const toggleRecordingButton = event.target.closest("[data-toggle-recording]");
+  if (toggleRecordingButton) {
+    const recordingId = toggleRecordingButton.dataset.toggleRecording;
+    if (expandedRecordings.has(recordingId)) {
+      expandedRecordings.delete(recordingId);
+    } else {
+      expandedRecordings.add(recordingId);
+    }
+    renderRecords();
     return;
   }
 
@@ -439,6 +490,7 @@ listEl.addEventListener("click", async (event) => {
         `/api/speaking/${transcribeButton.dataset.recordId}/recordings/${transcribeButton.dataset.transcribeRecording}/transcribe`,
         { method: "POST" }
       );
+      expandedRecordings.add(transcribeButton.dataset.transcribeRecording);
       await loadRecords();
       setStatus("Transcript ready. You can analyze it now.");
     } catch (error) {
@@ -465,6 +517,7 @@ listEl.addEventListener("click", async (event) => {
           body: JSON.stringify({ transcript: transcriptInput.value })
         }
       );
+      expandedRecordings.add(analyzeButton.dataset.analyzeRecording);
       expandedAnalyses.add(analyzeButton.dataset.analyzeRecording);
       await loadRecords();
       setStatus("Analysis ready.");

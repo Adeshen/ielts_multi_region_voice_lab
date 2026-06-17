@@ -536,6 +536,10 @@ input[type="range"] {
   background: rgba(15, 118, 110, 0.04);
 }
 
+.learner-recording.is-collapsed {
+  padding: 10px;
+}
+
 .recording-title-row {
   display: flex;
   justify-content: space-between;
@@ -543,7 +547,7 @@ input[type="range"] {
   align-items: start;
 }
 
-.recording-title-row div {
+.recording-title-row > div:first-child {
   display: grid;
   gap: 2px;
   min-width: 0;
@@ -553,6 +557,30 @@ input[type="range"] {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.recording-title-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.recording-compact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.recording-compact-meta span {
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--accent-dark);
+  padding: 2px 6px;
+  font-size: 0.72rem;
 }
 
 .transcript-panel {
