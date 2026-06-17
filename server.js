@@ -6,19 +6,24 @@ import express from "express";
 import {
   addHistoryRecord,
   addSpeakingRecord,
+  addDictationRecord,
   audioDir,
   ensureStorage,
+  readDictationRecords,
   readHistory,
   readSpeakingRecords,
   recordingDir,
   removeAudioFiles,
+  removeDictationRecordFiles,
   removeSpeakingRecordFiles,
   speakingRecordingDir,
+  writeDictationRecords,
   writeHistory,
   writeSpeakingRecords
 } from "./src/storage.js";
 import { transcribeAudioFile } from "./src/volcengineAsr.js";
 import { analyzeSpeakingAnswer } from "./src/deepseek.js";
+import { compareDictation } from "./src/dictation.js";
 import { listVoices, resolveVoiceIds } from "./src/voices.js";
 import { synthesizeSpeech, validateCredentials } from "./src/volcengine.js";
 
@@ -28,6 +33,7 @@ const port = Number(process.env.PORT || 3000);
 const publicDir = path.join(process.cwd(), "public");
 const maxTextLength = 2000;
 const maxSpeakingPromptLength = 4000;
+const maxDictationTextLength = 1000;
 const maxRecordingBytes = 15 * 1024 * 1024;
 const asrAudioBaseUrl = process.env.VOLCENGINE_ASR_AUDIO_BASE_URL?.replace(/\/+$/, "") || "";
 const sitePassword = process.env.SITE_PASSWORD || "";
@@ -435,6 +441,120 @@ app.delete("/api/history", async (_request, response, next) => {
     const history = await readHistory();
     await Promise.all(history.map((record) => removeAudioFiles(record)));
     await writeHistory([]);
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/dictation", async (_request, response, next) => {
+  try {
+    response.json(await readDictationRecords());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/dictation", async (request, response, next) => {
+  try {
+    validateCredentials();
+
+    const sourceText = String(request.body?.sourceText ?? "").trim();
+    if (!sourceText) {
+      return response.status(400).json({ error: "Please enter a sentence before starting dictation." });
+    }
+    if (sourceText.length > maxDictationTextLength) {
+      return response.status(400).json({
+        error: `Dictation text is too long. Keep it under ${maxDictationTextLength} characters.`
+      });
+    }
+
+    let voice;
+    try {
+      voice = resolveVoiceIds([request.body?.voiceId || "uk_female"])[0];
+    } catch (error) {
+      return response.status(400).json({ error: error.message });
+    }
+
+    const speedRatio = clampNumber(request.body?.speedRatio, 0.9, 0.5, 1.5);
+    const volumeRatio = clampNumber(request.body?.volumeRatio, 1, 0.2, 2);
+    const recordId = crypto.randomUUID();
+    const audioBuffer = await synthesizeSpeech({ text: sourceText, voice, speedRatio, volumeRatio });
+    const filename = `${recordId}-dictation-${voice.id}.mp3`;
+    await fs.writeFile(path.join(audioDir, filename), audioBuffer);
+
+    const record = {
+      id: recordId,
+      sourceText,
+      createdAt: new Date().toISOString(),
+      speedRatio,
+      volumeRatio,
+      filename,
+      audioUrl: `/audio/${filename}`,
+      voice: publicItemFromVoice({ voice, filename, audioUrl: `/audio/${filename}` }),
+      attempts: []
+    };
+
+    await addDictationRecord(record);
+    response.status(201).json(record);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/dictation/:id/check", async (request, response, next) => {
+  try {
+    const records = await readDictationRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Dictation record not found." });
+    }
+
+    const userText = String(request.body?.userText ?? "").trim();
+    if (!userText) {
+      return response.status(400).json({ error: "Type what you heard before checking the answer." });
+    }
+    if (userText.length > maxDictationTextLength) {
+      return response.status(400).json({ error: `Your answer is too long. Keep it under ${maxDictationTextLength} characters.` });
+    }
+
+    const result = compareDictation(record.sourceText, userText);
+    const attempt = {
+      id: crypto.randomUUID(),
+      userText,
+      createdAt: new Date().toISOString(),
+      ...result
+    };
+
+    record.attempts = [attempt, ...(record.attempts ?? [])].slice(0, 20);
+    await writeDictationRecords(records);
+    response.json({ record, attempt });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/dictation/:id", async (request, response, next) => {
+  try {
+    const records = await readDictationRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Dictation record not found." });
+    }
+
+    await removeDictationRecordFiles(record);
+    await writeDictationRecords(records.filter((item) => item.id !== record.id));
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/dictation", async (_request, response, next) => {
+  try {
+    const records = await readDictationRecords();
+    await Promise.all(records.map((record) => removeDictationRecordFiles(record)));
+    await writeDictationRecords([]);
     response.status(204).end();
   } catch (error) {
     next(error);

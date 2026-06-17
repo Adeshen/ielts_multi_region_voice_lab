@@ -6,6 +6,7 @@
 
 - 一句话生成多种英语音色，适合对比美式、英式、澳洲等发音差异。
 - 支持网页内播放 MP3 音频。
+- 支持 Dictation 听写模式：生成隐藏原文的听写音频，输入答案后自动评分和标出错词。
 - 支持在历史记录里直接录制自己的朗读，并和生成音频对比播放。
 - 支持单独的口语录音页面，可以自己输入 IELTS 题目/文段并录制回答。
 - 支持调用豆包 Seed ASR 识别口语录音，再调用 DeepSeek 生成 IELTS 评分、问题诊断和改写范文。
@@ -17,6 +18,7 @@
 - 音频文件保存在本地 `data/audio/`。
 - 跟读录音保存在本地 `data/recordings/`。
 - 口语题目和录音分别保存在本地 `data/speaking-history.json`、`data/speaking-recordings/`。
+- 听写记录保存在本地 `data/dictation-history.json`，听写音频复用 `data/audio/`。
 - 历史元数据保存在本地 `data/history.json`。
 - 火山引擎凭证只放在 `.env`，不会暴露给前端页面。
 
@@ -56,6 +58,7 @@ http://127.0.0.1:3000
 
 - TTS 多音色对比：`http://127.0.0.1:3000`
 - 口语录音模式：`http://127.0.0.1:3000/speaking.html`
+- Dictation 听写模式：`http://127.0.0.1:3000/dictation.html`
 - 本地音频访问示例：`http://127.0.0.1:3000/audio/{filename}.mp3`
 
 开发模式可使用：
@@ -124,6 +127,9 @@ PORT=3000
 - **本地音频持久化**
   每次生成的音频写入 `data/audio/{recordId}-{voiceId}.mp3`，网页通过 `/audio/...` 播放。
 
+- **Dictation 听写训练**
+  新增 `/dictation.html`。用户输入句子后选择音色和语速生成听写音频，页面默认隐藏原文；提交听写答案后，后端做词级 diff，返回正确词、漏听词、多写词、拼写相近词、wrong word、function words 漏听和 179 高频核心词命中情况。
+
 - **浏览器麦克风录音**
   前端支持录制学习者朗读，TTS 跟读录音保存到 `data/recordings/`，口语模式录音保存到 `data/speaking-recordings/`，网页可直接播放，便于和 TTS 音频对比。
 
@@ -146,7 +152,7 @@ PORT=3000
   口语模式使用 Web Audio API 在浏览器端编码 WAV，避免默认 WebM 录音格式不被火山 ASR 支持。
 
 - **本地历史记录**
-  TTS 记录写入 `data/history.json`，口语录音题目写入 `data/speaking-history.json`，分别记录文本、生成时间、音频路径和失败信息。
+  TTS 记录写入 `data/history.json`，口语录音题目写入 `data/speaking-history.json`，听写训练写入 `data/dictation-history.json`，分别记录文本、生成时间、音频路径、听写尝试和失败信息。
 
 - **部分失败容错**
   多个音色逐个生成。如果某个音色失败，其他成功音色仍会保存并返回，页面会显示失败原因。
@@ -171,10 +177,13 @@ PORT=3000
 ├── public/
 │   ├── index.html      # TTS 多音色对比页面
 │   ├── speaking.html   # 口语录音模式页面
+│   ├── dictation.html  # Dictation 听写训练页面
 │   ├── styles.css      # 页面样式
 │   ├── app.js          # TTS 页面交互逻辑
-│   └── speaking.js     # 口语录音页面交互逻辑
+│   ├── speaking.js     # 口语录音页面交互逻辑
+│   └── dictation.js    # 听写训练页面交互逻辑
 ├── src/
+│   ├── dictation.js    # 听写词级 diff 和错词统计
 │   ├── storage.js      # 本地音频和历史记录读写
 │   ├── volcengineAsr.js # 火山语音 ASR 录音文件识别
 │   ├── deepseek.js     # DeepSeek 口语评分和范文改写
@@ -186,7 +195,8 @@ PORT=3000
 │   ├── recordings/     # 学习者跟读录音
 │   ├── speaking-recordings/ # 口语模式录音
 │   ├── history.json    # TTS 历史记录
-│   └── speaking-history.json # 口语题目记录
+│   ├── speaking-history.json # 口语题目记录
+│   └── dictation-history.json # 听写训练记录
 ├── media/
 │   └── example_multi_region.mp4  # 案例演示视频
 ├── server.js           # Express 服务入口
@@ -257,6 +267,45 @@ PORT=3000
 ### `DELETE /api/history`
 
 清空全部历史记录，并删除全部历史音频文件和跟读录音。
+
+### `GET /api/dictation`
+
+返回听写训练记录，包含原句、音频、音色、语速和最近听写尝试。
+
+### `POST /api/dictation`
+
+生成一条听写训练音频。
+
+请求示例：
+
+```json
+{
+  "sourceText": "The coastal environment is home to many rare species.",
+  "voiceId": "uk_female",
+  "speedRatio": 0.9,
+  "volumeRatio": 1
+}
+```
+
+### `POST /api/dictation/:id/check`
+
+提交听写答案并返回词级 diff、准确率和错词统计。
+
+请求示例：
+
+```json
+{
+  "userText": "The costal environment is home to many rare spaces."
+}
+```
+
+### `DELETE /api/dictation/:id`
+
+删除一条听写记录，并删除对应 MP3 文件。
+
+### `DELETE /api/dictation`
+
+清空全部听写记录，并删除对应 MP3 文件。
 
 ### `GET /api/speaking`
 
@@ -372,9 +421,11 @@ node --check src/volcengine.js
 node --check src/voices.js
 node --check src/volcengineAsr.js
 node --check src/deepseek.js
+node --check src/dictation.js
 node --check src/storage.js
 node --check public/app.js
 node --check public/speaking.js
+node --check public/dictation.js
 ```
 
 也可以启动服务后，在网页输入一句 IELTS 句子并生成音频，确认：

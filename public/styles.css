@@ -29,7 +29,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -112,7 +113,7 @@ h4 {
 
 .mode-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
   margin-bottom: 14px;
 }
@@ -169,10 +170,21 @@ textarea {
 }
 
 textarea:focus,
+select:focus,
 input[type="range"]:focus-visible,
 button:focus-visible {
   outline: 3px solid rgba(15, 118, 110, 0.25);
   outline-offset: 2px;
+}
+
+select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--ink);
+  background: var(--surface-strong);
 }
 
 .form-meta,
@@ -881,6 +893,148 @@ input[type="range"] {
   width: 100%;
 }
 
+.dictation-current {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.dictation-card audio {
+  width: 100%;
+}
+
+.dictation-answer-form {
+  display: grid;
+  gap: 8px;
+}
+
+.dictation-answer-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.dictation-answer {
+  min-height: 90px;
+}
+
+.dictation-source {
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 118, 110, 0.06);
+  padding: 10px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.dictation-result {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.dictation-score-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.dictation-score-row span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.dictation-score-row .dictation-score {
+  border-color: rgba(15, 118, 110, 0.35);
+  color: var(--accent-dark);
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.dictation-diff {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.diff-token {
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.diff-token.is-correct {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.diff-token.is-missing {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.diff-token.is-extra {
+  color: #475569;
+  background: #e2e8f0;
+}
+
+.diff-token.is-spelling {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.diff-token.is-wrong {
+  color: #7f1d1d;
+  background: #fecaca;
+}
+
+.dictation-core-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dictation-core-grid > div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.dictation-core-grid p {
+  margin-bottom: 0;
+}
+
+.dictation-mistakes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.dictation-mistakes li {
+  line-height: 1.35;
+}
+
+.dictation-mistakes span {
+  margin-left: 8px;
+  color: var(--muted);
+}
+
 @keyframes recording-pulse {
   0% {
     opacity: 0.55;
@@ -926,6 +1080,7 @@ input[type="range"] {
   .lexical-grid,
   .vocab-card-grid,
   .cue-route-grid,
+  .dictation-core-grid,
   .recordings-list,
   .voice-grid-body {
     grid-template-columns: 1fr;

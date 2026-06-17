@@ -7,6 +7,7 @@ export const recordingDir = path.join(dataDir, "recordings");
 export const speakingRecordingDir = path.join(dataDir, "speaking-recordings");
 export const historyPath = path.join(dataDir, "history.json");
 export const speakingHistoryPath = path.join(dataDir, "speaking-history.json");
+export const dictationHistoryPath = path.join(dataDir, "dictation-history.json");
 
 export async function ensureStorage() {
   await fs.mkdir(audioDir, { recursive: true });
@@ -14,6 +15,7 @@ export async function ensureStorage() {
   await fs.mkdir(speakingRecordingDir, { recursive: true });
   await ensureJsonArrayFile(historyPath);
   await ensureJsonArrayFile(speakingHistoryPath);
+  await ensureJsonArrayFile(dictationHistoryPath);
 }
 
 async function ensureJsonArrayFile(filePath) {
@@ -58,6 +60,14 @@ export async function writeSpeakingRecords(records) {
   await writeJsonArray(speakingHistoryPath, records);
 }
 
+export async function readDictationRecords() {
+  return readJsonArray(dictationHistoryPath);
+}
+
+export async function writeDictationRecords(records) {
+  await writeJsonArray(dictationHistoryPath, records);
+}
+
 export async function addHistoryRecord(record) {
   const history = await readHistory();
   history.unshift(record);
@@ -68,6 +78,12 @@ export async function addSpeakingRecord(record) {
   const records = await readSpeakingRecords();
   records.unshift(record);
   await writeSpeakingRecords(records.slice(0, 100));
+}
+
+export async function addDictationRecord(record) {
+  const records = await readDictationRecords();
+  records.unshift(record);
+  await writeDictationRecords(records.slice(0, 100));
 }
 
 export async function removeAudioFiles(record) {
@@ -111,6 +127,24 @@ export async function removeSpeakingRecordFiles(record) {
     [...filenames].map(async (filename) => {
       try {
         await fs.unlink(path.join(speakingRecordingDir, filename));
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
+      }
+    })
+  );
+}
+
+export async function removeDictationRecordFiles(record) {
+  const filenames = new Set(
+    [record?.filename].filter((filename) => typeof filename === "string" && !filename.includes(".."))
+  );
+
+  await Promise.all(
+    [...filenames].map(async (filename) => {
+      try {
+        await fs.unlink(path.join(audioDir, filename));
       } catch (error) {
         if (error.code !== "ENOENT") {
           throw error;
