@@ -301,7 +301,7 @@ function renderAnalysis(analysis, recordingId) {
 function renderRecordings(record) {
   const recordings = record.recordings ?? [];
   if (!recordings.length) {
-    return '<p class="recording-empty">No recordings yet.</p>';
+    return '<p class="recording-empty">No attempts yet. Record your first answer for this prompt.</p>';
   }
 
   return recordings
@@ -324,7 +324,7 @@ function renderRecordings(record) {
         <div class="history-audio learner-recording ${isExpanded ? "is-expanded" : "is-collapsed"}">
           <div class="recording-title-row">
             <div>
-              <strong>Practice recording ${recordings.length - index}</strong>
+              <strong>Attempt ${recordings.length - index}</strong>
               <span>${escapeHtml(formatDate(recording.createdAt))}</span>
               ${statusTags ? `<div class="recording-compact-meta">${statusTags}</div>` : ""}
             </div>
@@ -392,26 +392,37 @@ function renderRecords() {
   listEl.className = "history-list";
   listEl.innerHTML = records
     .map(
-      (record) => `
+      (record) => {
+        const recordingCount = record.recordings?.length ?? 0;
+        const recordingLabel = recordingCount ? "Record another attempt" : "Record first attempt";
+        const statusText = recordingCount
+          ? `${recordingCount} attempt${recordingCount === 1 ? "" : "s"} saved for this prompt.`
+          : "Ready to record your first answer.";
+
+        return `
         <article class="history-card speaking-card" data-id="${escapeHtml(record.id)}">
           <div class="history-title-row">
             <div>
               <p class="eyebrow">${escapeHtml(formatDate(record.createdAt))}</p>
               <h3>${escapeHtml(record.title)}</h3>
+              <div class="recording-compact-meta prompt-attempt-meta">
+                <span>${escapeHtml(recordingCount)} attempt${recordingCount === 1 ? "" : "s"}</span>
+              </div>
               <p class="history-text speaking-prompt-text">${escapeHtml(record.prompt)}</p>
             </div>
             <div class="history-card-actions">
-              <button type="button" class="primary-button" data-start-recording="${escapeHtml(record.id)}">Start recording</button>
+              <button type="button" class="primary-button" data-start-recording="${escapeHtml(record.id)}">${escapeHtml(recordingLabel)}</button>
               <button type="button" class="ghost-button" data-stop-recording="${escapeHtml(record.id)}" disabled>Stop</button>
               <button type="button" class="danger-button" data-delete-record="${escapeHtml(record.id)}">Delete</button>
             </div>
           </div>
-          <div class="record-status" data-record-status="${escapeHtml(record.id)}">Ready to record your answer.</div>
+          <div class="record-status" data-record-status="${escapeHtml(record.id)}">${escapeHtml(statusText)}</div>
           <div class="recordings-list">
             ${renderRecordings(record)}
           </div>
         </article>
       `
+      }
     )
     .join("");
 }
@@ -503,7 +514,7 @@ listEl.addEventListener("click", async (event) => {
       card.classList.add("is-recording");
       startButton.disabled = true;
       stopButton.disabled = false;
-      cardStatus.textContent = "Recording... speak your answer.";
+      cardStatus.textContent = "Recording a new attempt... speak your answer.";
       setStatus("Recording from microphone...");
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop());
@@ -532,7 +543,7 @@ listEl.addEventListener("click", async (event) => {
       });
       expandedRecordings.add(savedRecording.id);
       await loadRecords();
-      setStatus("Recording saved.");
+      setStatus("Recording attempt saved. You can record another attempt for the same prompt.");
     } catch (error) {
       activeRecording = null;
       setStatus(error.message, "error");
