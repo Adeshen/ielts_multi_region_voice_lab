@@ -132,7 +132,7 @@ function updateCounter() {
 
 function selectedRecordingLimitSeconds() {
   const value = Number(recordingLimitSelect.value);
-  return Number.isFinite(value) && value > 0 ? value : 0;
+  return Number.isFinite(value) && value > 0 ? Math.min(value, 180) : 120;
 }
 
 function formatDuration(seconds) {
@@ -479,7 +479,7 @@ function updateRecordingTimer() {
   const limitSeconds = activeRecording.limitSeconds;
   const timerText = limitSeconds
     ? `${formatDuration(elapsedSeconds)} / ${formatDuration(limitSeconds)}`
-    : `${formatDuration(elapsedSeconds)} / no limit`;
+    : `${formatDuration(elapsedSeconds)} / ${formatDuration(120)}`;
   activeRecording.status.textContent = `Recording attempt... ${timerText}`;
 
   if (limitSeconds && elapsedSeconds >= limitSeconds) {
@@ -587,7 +587,7 @@ listEl.addEventListener("click", async (event) => {
       stopButton.disabled = false;
       updateRecordingTimer();
       activeRecording.timerId = setInterval(updateRecordingTimer, 500);
-      setStatus(limitSeconds ? `Recording from microphone. Limit ${formatDuration(limitSeconds)}.` : "Recording from microphone. No time limit.");
+      setStatus(`Recording from microphone. Limit ${formatDuration(limitSeconds)}.`);
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop());
       setStatus(error.message || "Could not start microphone recording.", "error");
