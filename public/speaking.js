@@ -3,6 +3,7 @@ const promptInput = document.querySelector("#prompt");
 const promptCount = document.querySelector("#prompt-count");
 const sampleButton = document.querySelector("#prompt-sample");
 const saveButton = document.querySelector("#save-prompt");
+const recordingLimitSelect = document.querySelector("#recording-limit");
 const clearButton = document.querySelector("#clear-speaking");
 const statusEl = document.querySelector("#speaking-status");
 const listEl = document.querySelector("#speaking-list");
@@ -127,6 +128,18 @@ function blobToDataUrl(blob) {
 
 function updateCounter() {
   promptCount.textContent = `${promptInput.value.length} / ${promptInput.maxLength}`;
+}
+
+function selectedRecordingLimitSeconds() {
+  const value = Number(recordingLimitSelect.value);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function formatDuration(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = String(safeSeconds % 60).padStart(2, "0");
+  return `${minutes}:${remainingSeconds}`;
 }
 
 function audioFrameFor(audio) {
@@ -450,10 +463,62 @@ function resetRecordingUi() {
     return;
   }
 
+  clearInterval(activeRecording.timerId);
   activeRecording.stream.getTracks().forEach((track) => track.stop());
   activeRecording.card.classList.remove("is-recording");
   activeRecording.startButton.disabled = false;
   activeRecording.stopButton.disabled = true;
+}
+
+function updateRecordingTimer() {
+  if (!activeRecording) {
+    return;
+  }
+
+  const elapsedSeconds = Math.floor((Date.now() - activeRecording.startedAt) / 1000);
+  const limitSeconds = activeRecording.limitSeconds;
+  const timerText = limitSeconds
+    ? `${formatDuration(elapsedSeconds)} / ${formatDuration(limitSeconds)}`
+    : `${formatDuration(elapsedSeconds)} / no limit`;
+  activeRecording.status.textContent = `Recording attempt... ${timerText}`;
+
+  if (limitSeconds && elapsedSeconds >= limitSeconds) {
+    stopActiveRecording({ automatic: true });
+  }
+}
+
+async function stopActiveRecording({ automatic = false } = {}) {
+  if (!activeRecording || activeRecording.isStopping) {
+    return;
+  }
+
+  const recording = activeRecording;
+  recording.isStopping = true;
+  recording.stopButton.disabled = true;
+
+  try {
+    const blob = recording.recorder.stop();
+    recording.status.textContent = automatic ? "Time limit reached. Saving recording..." : "Saving recording...";
+    resetRecordingUi();
+    activeRecording = null;
+    const dataUrl = await blobToDataUrl(blob);
+    const savedRecording = await apiFetch(`/api/speaking/${recording.card.dataset.id}/recordings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataUrl })
+    });
+    expandedRecordings.add(savedRecording.id);
+    await loadRecords();
+    setStatus(
+      automatic
+        ? "Recording attempt saved after reaching the time limit."
+        : "Recording attempt saved. You can record another attempt for the same prompt."
+    );
+  } catch (error) {
+    resetRecordingUi();
+    activeRecording = null;
+    setStatus(error.message, "error");
+  }
 }
 
 form.addEventListener("submit", async (event) => {
@@ -504,18 +569,25 @@ listEl.addEventListener("click", async (event) => {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = createWavRecorder(stream);
+      const limitSeconds = selectedRecordingLimitSeconds();
       activeRecording = {
         card,
         recorder,
         startButton,
         stopButton,
-        stream
+        stream,
+        status: cardStatus,
+        startedAt: Date.now(),
+        limitSeconds,
+        timerId: null,
+        isStopping: false
       };
       card.classList.add("is-recording");
       startButton.disabled = true;
       stopButton.disabled = false;
-      cardStatus.textContent = "Recording a new attempt... speak your answer.";
-      setStatus("Recording from microphone...");
+      updateRecordingTimer();
+      activeRecording.timerId = setInterval(updateRecordingTimer, 500);
+      setStatus(limitSeconds ? `Recording from microphone. Limit ${formatDuration(limitSeconds)}.` : "Recording from microphone. No time limit.");
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop());
       setStatus(error.message || "Could not start microphone recording.", "error");
@@ -525,29 +597,7 @@ listEl.addEventListener("click", async (event) => {
 
   const stopButton = event.target.closest("[data-stop-recording]");
   if (stopButton) {
-    if (!activeRecording) {
-      return;
-    }
-    const recording = activeRecording;
-    stopButton.disabled = true;
-    try {
-      const blob = recording.recorder.stop();
-      recording.card.querySelector("[data-record-status]").textContent = "Saving recording...";
-      resetRecordingUi();
-      activeRecording = null;
-      const dataUrl = await blobToDataUrl(blob);
-      const savedRecording = await apiFetch(`/api/speaking/${recording.card.dataset.id}/recordings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataUrl })
-      });
-      expandedRecordings.add(savedRecording.id);
-      await loadRecords();
-      setStatus("Recording attempt saved. You can record another attempt for the same prompt.");
-    } catch (error) {
-      activeRecording = null;
-      setStatus(error.message, "error");
-    }
+    await stopActiveRecording();
     return;
   }
 

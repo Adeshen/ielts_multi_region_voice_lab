@@ -38,6 +38,15 @@
             <button type="button" id="prompt-sample" class="ghost-button">Sample</button>
           </div>
 
+          <label class="field-label" for="recording-limit">Recording limit</label>
+          <select id="recording-limit" name="recordingLimit">
+            <option value="30">30 seconds</option>
+            <option value="60">1 minute</option>
+            <option value="120" selected>2 minutes · IELTS Part 2</option>
+            <option value="180">3 minutes</option>
+            <option value="0">No limit</option>
+          </select>
+
           <button type="submit" id="save-prompt" class="primary-button">Save prompt</button>
         </form>
       </section>

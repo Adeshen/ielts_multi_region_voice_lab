@@ -34,7 +34,7 @@ const publicDir = path.join(process.cwd(), "public");
 const maxTextLength = 2000;
 const maxSpeakingPromptLength = 4000;
 const maxDictationTextLength = 1000;
-const maxRecordingBytes = 15 * 1024 * 1024;
+const maxRecordingBytes = 25 * 1024 * 1024;
 const asrAudioBaseUrl = process.env.VOLCENGINE_ASR_AUDIO_BASE_URL?.replace(/\/+$/, "") || "";
 const sitePassword = process.env.SITE_PASSWORD || "";
 const siteSessionSecret = process.env.SITE_SESSION_SECRET || sitePassword || "ielts-voice-lab-dev-secret";
@@ -259,7 +259,7 @@ function parseRecordingUpload(dataUrl) {
     return { error: "Recording is empty." };
   }
   if (buffer.byteLength > maxRecordingBytes) {
-    return { error: "Recording is too large. Keep it under 15 MB." };
+    return { error: "Recording is too large. Keep it under 25 MB." };
   }
 
   return { buffer, extension, mimeType };
