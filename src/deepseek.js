@@ -30,7 +30,7 @@ function extractJsonObject(text) {
   }
 }
 
-export async function analyzeSpeakingAnswer({ prompt, transcript }) {
+export async function analyzeSpeakingAnswer({ prompt, transcript, asrTiming = null }) {
   validateDeepseekCredentials();
 
   const response = await fetch(deepseekApiUrl, {
@@ -50,6 +50,8 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
           content: [
             "You are an IELTS Speaking examiner and coach.",
             "Score only from the provided transcript, not from audio acoustics.",
+            "If ASR timing segments are provided, use them as supporting evidence for fluency, pacing, pausing, and answer organization.",
+            "Do not overclaim pronunciation details from timing alone; pronunciation remains an estimate unless phonetic analysis is available.",
             "Return strict JSON with no markdown.",
             "Use half-band IELTS scores from 0 to 9.",
             "Use the provided IELTS mother-topic list and core vocabulary bank as coaching references.",
@@ -64,6 +66,7 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
             task: "Evaluate this IELTS speaking response and rewrite it into a stronger model answer.",
             questionOrPrompt: prompt,
             learnerTranscript: transcript,
+            asrTimingEvidence: asrTiming,
             motherTopicOptions: IELTS_MOTHER_TOPICS,
             coreVocabularySource: IELTS_CORE_VOCABULARY_LABEL,
             coreVocabularyBank: IELTS_CORE_VOCABULARY,
@@ -86,6 +89,12 @@ export async function analyzeSpeakingAnswer({ prompt, transcript }) {
               },
               topicFamily: "closest mother-topic label from motherTopicOptions",
               summary: "short overall diagnosis",
+              timingFeedback: {
+                pacing: "comment on speed and pacing if ASR timing is available",
+                pauses: "comment on long pauses or segment breaks if ASR timing is available",
+                organization: "comment on whether segment timing suggests organized delivery",
+                evidenceUsed: "briefly mention timing evidence used, or say timing was unavailable"
+              },
               strengths: ["specific strengths"],
               improvements: ["specific problems to fix"],
               lexicalCoverage: {

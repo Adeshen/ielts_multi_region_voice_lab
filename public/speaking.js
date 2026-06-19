@@ -245,6 +245,42 @@ function renderCueCardNotes(analysis) {
   `;
 }
 
+function renderTimingFeedback(analysis) {
+  const timing = analysis.timingFeedback;
+  if (!timing) {
+    return "";
+  }
+
+  const items = [
+    ["Pacing", timing.pacing],
+    ["Pauses", timing.pauses],
+    ["Organization", timing.organization],
+    ["Evidence", timing.evidenceUsed]
+  ].filter(([, value]) => value);
+
+  if (!items.length) {
+    return "";
+  }
+
+  return `
+    <div class="analysis-section timing-section">
+      <h4>ASR timing feedback</h4>
+      <div class="timing-feedback-grid">
+        ${items
+          .map(
+            ([label, value]) => `
+              <div class="timing-feedback-card">
+                <strong>${escapeHtml(label)}</strong>
+                <p>${escapeHtml(value)}</p>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
 function renderAnalysis(analysis, recordingId) {
   if (!analysis) {
     return "";
@@ -297,6 +333,7 @@ function renderAnalysis(analysis, recordingId) {
             <ul>${improvements}</ul>
           </div>
         </div>
+        ${renderTimingFeedback(analysis)}
         ${renderLexicalCoverage(analysis)}
         ${corrections ? `<div class="analysis-section"><h4>Sentence fixes</h4>${corrections}</div>` : ""}
         ${renderCueCardNotes(analysis)}

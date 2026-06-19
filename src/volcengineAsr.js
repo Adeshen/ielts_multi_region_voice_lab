@@ -97,6 +97,86 @@ function extractText(payload) {
   return candidates.find((value) => typeof value === "string" && value.trim())?.trim() || "";
 }
 
+function firstNumber(...values) {
+  return values.find((value) => Number.isFinite(Number(value))) ?? null;
+}
+
+function normalizeTimeSeconds(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  if (numeric > 100000) {
+    return numeric / 1000000;
+  }
+  if (numeric > 1000) {
+    return numeric / 1000;
+  }
+  return numeric;
+}
+
+function extractSegments(payload) {
+  const rawSegments =
+    payload?.result?.utterances ||
+    payload?.utterances ||
+    payload?.result?.results ||
+    payload?.results ||
+    [];
+
+  if (!Array.isArray(rawSegments)) {
+    return [];
+  }
+
+  return rawSegments
+    .map((item, index) => {
+      const start = normalizeTimeSeconds(
+        firstNumber(item.start_time, item.startTime, item.start, item.begin_time, item.beginTime, item.begin)
+      );
+      const end = normalizeTimeSeconds(
+        firstNumber(item.end_time, item.endTime, item.end, item.stop_time, item.stopTime, item.stop)
+      );
+      const text = String(item.text || item.result?.text || "").trim();
+      return {
+        index,
+        start,
+        end,
+        duration: start !== null && end !== null ? Math.max(0, end - start) : null,
+        text
+      };
+    })
+    .filter((item) => item.text || item.start !== null || item.end !== null);
+}
+
+function summarizeTiming(segments) {
+  const timedSegments = segments.filter((item) => item.start !== null && item.end !== null);
+  if (!timedSegments.length) {
+    return {
+      segmentCount: segments.length,
+      timedSegmentCount: 0
+    };
+  }
+
+  const sorted = [...timedSegments].sort((left, right) => left.start - right.start);
+  const totalDuration = Math.max(0, sorted.at(-1).end - sorted[0].start);
+  const speakingDuration = sorted.reduce((total, item) => total + Math.max(0, item.end - item.start), 0);
+  const pauses = sorted
+    .slice(1)
+    .map((item, index) => Math.max(0, item.start - sorted[index].end));
+  const longestPause = pauses.length ? Math.max(...pauses) : 0;
+  const wordCount = sorted.reduce((total, item) => total + String(item.text || "").split(/\s+/).filter(Boolean).length, 0);
+
+  return {
+    segmentCount: segments.length,
+    timedSegmentCount: timedSegments.length,
+    totalDurationSeconds: Number(totalDuration.toFixed(2)),
+    speakingDurationSeconds: Number(speakingDuration.toFixed(2)),
+    silenceDurationSeconds: Number(Math.max(0, totalDuration - speakingDuration).toFixed(2)),
+    longestPauseSeconds: Number(longestPause.toFixed(2)),
+    averageSegmentDurationSeconds: Number((speakingDuration / timedSegments.length).toFixed(2)),
+    estimatedWordsPerMinute: totalDuration > 0 ? Math.round((wordCount / totalDuration) * 60) : null
+  };
+}
+
 function errorMessage(payload, fallback, responseHeaders) {
   const providerMessage = extractProviderMessage(responseHeaders, payload);
 
@@ -207,10 +287,13 @@ export async function transcribeAudioFile({ audioUrl, filename, prompt }) {
 
   const submitted = await submitAudio({ audioUrl, filename, prompt });
   if (submitted.text) {
+    const segments = extractSegments(submitted.payload);
     return {
       text: submitted.text,
       provider: "volcengine-asr",
       model: ASR_MODEL_NAME,
+      segments,
+      timing: summarizeTiming(segments),
       raw: submitted.payload
     };
   }
@@ -219,10 +302,13 @@ export async function transcribeAudioFile({ audioUrl, filename, prompt }) {
     await sleep(ASR_POLL_INTERVAL_MS);
     const result = await queryAudio({ requestId: submitted.taskId || submitted.requestId });
     if (result.text) {
+      const segments = extractSegments(result.payload);
       return {
         text: result.text,
         provider: "volcengine-asr",
         model: ASR_MODEL_NAME,
+        segments,
+        timing: summarizeTiming(segments),
         raw: result.payload
       };
     }

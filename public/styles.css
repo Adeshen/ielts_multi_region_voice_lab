@@ -820,6 +820,37 @@ input[type="range"] {
   font-size: 0.88rem;
 }
 
+.timing-section {
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.04);
+  padding: 10px;
+}
+
+.timing-feedback-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.timing-feedback-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.timing-feedback-card strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #1d4ed8;
+  font-size: 0.84rem;
+}
+
+.timing-feedback-card p {
+  margin-bottom: 0;
+}
+
 .analysis-correction {
   border-left: 3px solid rgba(15, 118, 110, 0.3);
   padding-left: 10px;
@@ -1103,6 +1134,7 @@ input[type="range"] {
   .lexical-grid,
   .vocab-card-grid,
   .cue-route-grid,
+  .timing-feedback-grid,
   .dictation-core-grid,
   .recordings-list,
   .voice-grid-body {

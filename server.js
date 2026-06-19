@@ -783,6 +783,8 @@ app.post("/api/speaking/:id/recordings/:recordingId/transcribe", async (request,
     recording.transcription = {
       provider: transcription.provider,
       model: transcription.model,
+      segments: transcription.segments ?? [],
+      timing: transcription.timing ?? null,
       createdAt: new Date().toISOString()
     };
     await writeSpeakingRecords(records);
@@ -815,7 +817,13 @@ app.post("/api/speaking/:id/recordings/:recordingId/analyze", async (request, re
 
     const analysis = await analyzeSpeakingAnswer({
       prompt: record.prompt,
-      transcript
+      transcript,
+      asrTiming: recording.transcription
+        ? {
+            segments: recording.transcription.segments ?? [],
+            timing: recording.transcription.timing ?? null
+          }
+        : null
     });
 
     recording.transcript = transcript;
