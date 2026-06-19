@@ -6,6 +6,7 @@ const ASR_RESOURCE_ID = process.env.VOLCENGINE_ASR_RESOURCE_ID || "volc.seedasr.
 const ASR_MODEL_NAME = process.env.VOLCENGINE_ASR_MODEL_NAME || "bigmodel";
 const ASR_MAX_POLLS = Number(process.env.VOLCENGINE_ASR_MAX_POLLS || 30);
 const ASR_POLL_INTERVAL_MS = Number(process.env.VOLCENGINE_ASR_POLL_INTERVAL_MS || 2000);
+const ASR_FETCH_TIMEOUT_MS = Number(process.env.VOLCENGINE_ASR_FETCH_TIMEOUT_MS || 20000);
 const PROCESSING_CODES = new Set(["20000001", "20000002"]);
 const STATUS_MESSAGES = new Map([
   ["20000003", "Silent audio: no speech was detected."],
@@ -123,6 +124,20 @@ async function parseJsonResponse(response) {
   }
 }
 
+async function fetchWithTimeout(url, options, label) {
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(ASR_FETCH_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (error.name === "AbortError" || error.name === "TimeoutError") {
+      throw new Error(`${label} timed out after ${Math.round(ASR_FETCH_TIMEOUT_MS / 1000)} seconds.`);
+    }
+    throw error;
+  }
+}
+
 function supportedFormat(filename) {
   const extension = filename.split(".").pop()?.toLowerCase() || "";
   if (!["raw", "wav", "mp3", "ogg"].includes(extension)) {
@@ -134,7 +149,7 @@ function supportedFormat(filename) {
 async function submitAudio({ audioUrl, filename, prompt }) {
   const requestId = crypto.randomUUID();
   const extension = supportedFormat(filename);
-  const response = await fetch(ASR_SUBMIT_ENDPOINT, {
+  const response = await fetchWithTimeout(ASR_SUBMIT_ENDPOINT, {
     method: "POST",
     headers: headers(requestId),
     body: JSON.stringify({
@@ -153,7 +168,7 @@ async function submitAudio({ audioUrl, filename, prompt }) {
         show_utterances: true
       }
     })
-  });
+  }, "Volcengine ASR submit request");
 
   const payload = await parseJsonResponse(response);
   const status = extractStatus(payload, response.headers);
@@ -170,11 +185,11 @@ async function submitAudio({ audioUrl, filename, prompt }) {
 }
 
 async function queryAudio({ requestId }) {
-  const response = await fetch(ASR_QUERY_ENDPOINT, {
+  const response = await fetchWithTimeout(ASR_QUERY_ENDPOINT, {
     method: "POST",
     headers: headers(requestId),
     body: JSON.stringify({})
-  });
+  }, "Volcengine ASR query request");
   const payload = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(errorMessage(payload, `Volcengine ASR query failed with status ${response.status}.`, response.headers));

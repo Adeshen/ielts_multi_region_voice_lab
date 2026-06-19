@@ -642,6 +642,7 @@ listEl.addEventListener("click", async (event) => {
   if (transcribeButton) {
     transcribeButton.disabled = true;
     transcribeButton.textContent = "Transcribing...";
+    setStatus("Submitting audio to ASR. This can take up to about 60 seconds for longer WAV recordings.");
     try {
       await apiFetch(
         `/api/speaking/${transcribeButton.dataset.recordId}/recordings/${transcribeButton.dataset.transcribeRecording}/transcribe`,
