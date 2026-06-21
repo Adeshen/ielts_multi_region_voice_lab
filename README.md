@@ -122,6 +122,17 @@ PORT=3000
 - `HOST=127.0.0.1`：仅监听本机，避免局域网暴露。
 - `PORT=3000`：本地网页端口。
 
+### TOS AccessKey 配置
+
+在火山引擎控制台的访问控制页面找到 `AccessKeyID` 和 `SecretAccessKey` 后，只把真实值写入本机或服务器的 `.env`：
+
+```bash
+TOS_ACCESS_KEY_ID=your_access_key_id_from_volcengine_iam
+TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
+```
+
+不要把真实 `AccessKeyID` 或 `SecretAccessKey` 写入 `README.md`、`.env.example`、Git commit、Issue、PR 或公开聊天记录。它们可以读写对象存储桶，泄露后应立即在火山引擎访问控制页面禁用或轮换。
+
 ## 关键技术点
 
 - **Node.js + Express 后端**
