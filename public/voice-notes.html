@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voice Notes</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell speaking-shell">
+      <section class="composer" aria-labelledby="voice-notes-title">
+        <div class="title-block">
+          <p class="eyebrow">Speech Capture</p>
+          <h1 id="voice-notes-title">Voice Notes</h1>
+        </div>
+        <nav class="mode-tabs" aria-label="Practice modes">
+          <a class="mode-tab" href="/">TTS comparison</a>
+          <a class="mode-tab" href="/speaking.html">Speaking recording</a>
+          <a class="mode-tab is-active" href="/voice-notes.html">Voice notes</a>
+          <a class="mode-tab" href="/dictation.html">Dictation</a>
+          <form class="logout-form" action="/logout" method="post">
+            <button class="mode-tab lock-tab" type="submit">Lock</button>
+          </form>
+        </nav>
+
+        <form id="voice-note-form" class="tts-form">
+          <label class="field-label" for="voice-note-title-input">Title</label>
+          <input
+            id="voice-note-title-input"
+            name="title"
+            maxlength="80"
+            placeholder="Morning speaking note"
+          />
+
+          <label class="field-label" for="voice-note-limit">Recording limit</label>
+          <select id="voice-note-limit" name="recordingLimit">
+            <option value="30">30 seconds</option>
+            <option value="60">1 minute</option>
+            <option value="120" selected>2 minutes</option>
+            <option value="180">3 minutes</option>
+          </select>
+
+          <label class="voice-note-toggle">
+            <input id="auto-transcribe" type="checkbox" checked />
+            <span>Transcribe automatically after saving</span>
+          </label>
+
+          <div class="record-actions">
+            <button type="button" id="start-voice-note" class="primary-button">Start recording</button>
+            <button type="button" id="stop-voice-note" class="ghost-button" disabled>Stop</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="workspace" aria-live="polite">
+        <div class="history-header">
+          <div>
+            <p class="eyebrow">Pure recording</p>
+            <h2>Voice notes</h2>
+          </div>
+          <div class="history-actions">
+            <button type="button" id="clear-voice-notes" class="ghost-button">Clear</button>
+          </div>
+        </div>
+        <div id="voice-note-status" class="status"></div>
+        <div id="voice-note-current" class="dictation-current empty-state">Record a voice note to transcribe it.</div>
+        <div id="voice-note-list" class="history-list empty-state">No voice notes yet.</div>
+      </section>
+    </main>
+
+    <script src="/voice-notes.js" type="module"></script>
+  </body>
+</html>

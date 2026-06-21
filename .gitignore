@@ -6,4 +6,5 @@ data/speaking-recordings/
 data/history.json
 data/speaking-history.json
 data/dictation-history.json
+data/voice-notes-history.json
 .DS_Store

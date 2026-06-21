@@ -8,6 +8,7 @@ export const speakingRecordingDir = path.join(dataDir, "speaking-recordings");
 export const historyPath = path.join(dataDir, "history.json");
 export const speakingHistoryPath = path.join(dataDir, "speaking-history.json");
 export const dictationHistoryPath = path.join(dataDir, "dictation-history.json");
+export const voiceNoteHistoryPath = path.join(dataDir, "voice-notes-history.json");
 
 export async function ensureStorage() {
   await fs.mkdir(audioDir, { recursive: true });
@@ -16,6 +17,7 @@ export async function ensureStorage() {
   await ensureJsonArrayFile(historyPath);
   await ensureJsonArrayFile(speakingHistoryPath);
   await ensureJsonArrayFile(dictationHistoryPath);
+  await ensureJsonArrayFile(voiceNoteHistoryPath);
 }
 
 async function ensureJsonArrayFile(filePath) {
@@ -68,6 +70,14 @@ export async function writeDictationRecords(records) {
   await writeJsonArray(dictationHistoryPath, records);
 }
 
+export async function readVoiceNoteRecords() {
+  return readJsonArray(voiceNoteHistoryPath);
+}
+
+export async function writeVoiceNoteRecords(records) {
+  await writeJsonArray(voiceNoteHistoryPath, records);
+}
+
 export async function addHistoryRecord(record) {
   const history = await readHistory();
   history.unshift(record);
@@ -84,6 +94,12 @@ export async function addDictationRecord(record) {
   const records = await readDictationRecords();
   records.unshift(record);
   await writeDictationRecords(records.slice(0, 100));
+}
+
+export async function addVoiceNoteRecord(record) {
+  const records = await readVoiceNoteRecords();
+  records.unshift(record);
+  await writeVoiceNoteRecords(records.slice(0, 100));
 }
 
 export async function removeAudioFiles(record) {
@@ -149,6 +165,24 @@ export async function removeDictationRecordFiles(record) {
     [...filenames].map(async (filename) => {
       try {
         await fs.unlink(path.join(audioDir, filename));
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
+      }
+    })
+  );
+}
+
+export async function removeVoiceNoteRecordFiles(record) {
+  const filenames = new Set(
+    [record?.filename].filter((filename) => typeof filename === "string" && !filename.includes(".."))
+  );
+
+  await Promise.all(
+    [...filenames].map(async (filename) => {
+      try {
+        await fs.unlink(path.join(speakingRecordingDir, filename));
       } catch (error) {
         if (error.code !== "ENOENT") {
           throw error;

@@ -7,19 +7,23 @@ import {
   addHistoryRecord,
   addSpeakingRecord,
   addDictationRecord,
+  addVoiceNoteRecord,
   audioDir,
   ensureStorage,
   readDictationRecords,
   readHistory,
   readSpeakingRecords,
+  readVoiceNoteRecords,
   recordingDir,
   removeAudioFiles,
   removeDictationRecordFiles,
   removeSpeakingRecordFiles,
+  removeVoiceNoteRecordFiles,
   speakingRecordingDir,
   writeDictationRecords,
   writeHistory,
-  writeSpeakingRecords
+  writeSpeakingRecords,
+  writeVoiceNoteRecords
 } from "./src/storage.js";
 import { transcribeAudioFile } from "./src/volcengineAsr.js";
 import { analyzeSpeakingAnswer, reviewDictationAttempt } from "./src/deepseek.js";
@@ -644,6 +648,107 @@ app.delete("/api/dictation", async (_request, response, next) => {
     const records = await readDictationRecords();
     await Promise.all(records.map((record) => removeDictationRecordFiles(record)));
     await writeDictationRecords([]);
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/voice-notes", async (_request, response, next) => {
+  try {
+    response.json(await readVoiceNoteRecords());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/voice-notes", async (request, response, next) => {
+  try {
+    const parsed = parseRecordingUpload(request.body?.dataUrl);
+    if (parsed.error) {
+      return response.status(400).json({ error: parsed.error });
+    }
+
+    const recordId = crypto.randomUUID();
+    const filename = `voice-note-${recordId}.${parsed.extension}`;
+    await fs.writeFile(path.join(speakingRecordingDir, filename), parsed.buffer);
+
+    const record = {
+      id: recordId,
+      title: String(request.body?.title ?? "").trim().slice(0, 80) || "Voice note",
+      filename,
+      audioUrl: `/speaking-recordings/${filename}`,
+      mimeType: parsed.mimeType,
+      createdAt: new Date().toISOString()
+    };
+
+    await addVoiceNoteRecord(record);
+    response.status(201).json(record);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/voice-notes/:id/transcribe", async (request, response, next) => {
+  try {
+    const records = await readVoiceNoteRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Voice note not found." });
+    }
+    if (typeof record.filename !== "string" || record.filename.includes("..")) {
+      return response.status(400).json({ error: "Voice note filename is invalid." });
+    }
+    if (!asrAudioBaseUrl) {
+      return response.status(400).json({
+        error:
+          "VOLCENGINE_ASR_AUDIO_BASE_URL is not configured. Volcengine recording-file ASR needs a public URL for the audio file."
+      });
+    }
+
+    await fs.access(path.join(speakingRecordingDir, record.filename));
+    const transcription = await transcribeAudioFile({
+      audioUrl: publicSpeakingRecordingUrl(record.filename),
+      filename: record.filename,
+      prompt: record.title
+    });
+
+    record.transcript = transcription.text;
+    record.transcription = {
+      provider: transcription.provider,
+      model: transcription.model,
+      segments: transcription.segments ?? [],
+      timing: transcription.timing ?? null,
+      createdAt: new Date().toISOString()
+    };
+    await writeVoiceNoteRecords(records);
+    response.json({ record, transcript: transcription.text });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/voice-notes/:id", async (request, response, next) => {
+  try {
+    const records = await readVoiceNoteRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Voice note not found." });
+    }
+
+    await removeVoiceNoteRecordFiles(record);
+    await writeVoiceNoteRecords(records.filter((item) => item.id !== record.id));
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/voice-notes", async (_request, response, next) => {
+  try {
+    const records = await readVoiceNoteRecords();
+    await Promise.all(records.map((record) => removeVoiceNoteRecordFiles(record)));
+    await writeVoiceNoteRecords([]);
     response.status(204).end();
   } catch (error) {
     next(error);

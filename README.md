@@ -9,6 +9,7 @@
 - 支持 Dictation 听写模式：可生成新听写音频，也可直接复用 Audio comparison 历史音频；输入答案后自动评分和标出错词，并可选用 DeepSeek 做更灵活的 AI 复核。
 - 支持在历史记录里直接录制自己的朗读，并和生成音频对比播放。
 - 支持单独的口语录音页面，可以自己输入 IELTS 题目/文段，并在同一个题目下保存多次回答录音。
+- 支持纯口语记录页面，只做自由录音和 ASR 转写，不进入 IELTS 评分和范文分析流程。
 - 支持调用豆包 Seed ASR 识别口语录音，再调用 DeepSeek 生成 IELTS 评分、问题诊断和改写范文。
 - 口语分析会对齐 12 类 IELTS 母题和 179 个高频核心词及自然变体，提示已使用词、可补充词和范文目标词。
 - 口语分析会提取 Part 2 范文关键词和展开路线，方便一分钟准备时做 cue-card 笔记。
@@ -18,6 +19,7 @@
 - 音频文件保存在本地 `data/audio/`。
 - 跟读录音保存在本地 `data/recordings/`。
 - 口语题目和录音分别保存在本地 `data/speaking-history.json`、`data/speaking-recordings/`。
+- 纯口语记录保存在本地 `data/voice-notes-history.json`，录音文件复用 `data/speaking-recordings/`。
 - 听写记录保存在本地 `data/dictation-history.json`，听写音频复用 `data/audio/`。
 - 历史元数据保存在本地 `data/history.json`。
 - 火山引擎凭证只放在 `.env`，不会暴露给前端页面。
@@ -58,6 +60,7 @@ http://127.0.0.1:3000
 
 - TTS 多音色对比：`http://127.0.0.1:3000`
 - 口语录音模式：`http://127.0.0.1:3000/speaking.html`
+- 纯口语记录：`http://127.0.0.1:3000/voice-notes.html`
 - Dictation 听写模式：`http://127.0.0.1:3000/dictation.html`
 - 本地音频访问示例：`http://127.0.0.1:3000/audio/{filename}.mp3`
 
@@ -139,6 +142,9 @@ PORT=3000
 - **口语录音模式**
   新增 `/speaking.html`，可手动输入题目或文段，保存为练习卡片，再在同一个题目下反复录制多个 answer attempts。录音默认限制为 2 分钟，适合 IELTS Part 2，也可以切换为 30 秒、1 分钟或 3 分钟；所有录音都会限制在 3 分钟以内。每条录音都可以单独播放、转写、分析和删除。该模式不调用火山 TTS。
 
+- **纯口语记录模式**
+  新增 `/voice-notes.html`，用于自由录音和转写。它不需要先创建 IELTS 题目，也不会调用 DeepSeek 做评分；适合日常 shadowing、复述、自由表达或临时口语日记。录音可设置 30 秒、1 分钟、2 分钟或 3 分钟上限，保存后可自动或手动调用豆包 Seed ASR 转写。
+
 - **DeepSeek 口语分析**
   对录音填写回答文字稿后，后端调用 DeepSeek 生成 IELTS 维度评分、改进建议、句子修正和更自然的 Band 7.5-8.0 范文。分析还会输出 Part 2 cue-card 关键词和 speaking route，帮助学习者从关键词复述，而不是死背整篇范文。如果该录音先经过火山 ASR 转写，ASR 分段时间戳和停顿/语速摘要也会一起传给 DeepSeek，用于辅助判断 fluency、pacing 和 organization。当前分析不做真正 phonetic pronunciation 评分。
 
@@ -180,10 +186,12 @@ PORT=3000
 ├── public/
 │   ├── index.html      # TTS 多音色对比页面
 │   ├── speaking.html   # 口语录音模式页面
+│   ├── voice-notes.html # 纯口语记录页面
 │   ├── dictation.html  # Dictation 听写训练页面
 │   ├── styles.css      # 页面样式
 │   ├── app.js          # TTS 页面交互逻辑
 │   ├── speaking.js     # 口语录音页面交互逻辑
+│   ├── voice-notes.js  # 纯口语记录页面交互逻辑
 │   └── dictation.js    # 听写训练页面交互逻辑
 ├── src/
 │   ├── dictation.js    # 听写词级 diff 和错词统计
@@ -199,6 +207,7 @@ PORT=3000
 │   ├── speaking-recordings/ # 口语模式录音
 │   ├── history.json    # TTS 历史记录
 │   ├── speaking-history.json # 口语题目记录
+│   ├── voice-notes-history.json # 纯口语记录
 │   └── dictation-history.json # 听写训练记录
 ├── media/
 │   └── example_multi_region.mp4  # 案例演示视频
@@ -377,6 +386,35 @@ PORT=3000
 
 清空全部口语题目和口语模式录音。
 
+### `GET /api/voice-notes`
+
+返回纯口语记录，按最新创建时间倒序排列。
+
+### `POST /api/voice-notes`
+
+保存一条纯口语录音。该接口只保存录音和标题，不做转写。
+
+请求示例：
+
+```json
+{
+  "title": "Morning speaking note",
+  "dataUrl": "data:audio/wav;base64,..."
+}
+```
+
+### `POST /api/voice-notes/:id/transcribe`
+
+使用豆包 Seed ASR 对纯口语录音做转写，并把文字稿和 ASR timing evidence 保存到该记录。
+
+### `DELETE /api/voice-notes/:id`
+
+删除一条纯口语记录，并删除对应录音文件。
+
+### `DELETE /api/voice-notes`
+
+清空全部纯口语记录，并删除对应录音文件。
+
 ## 当前音色预设
 
 前端使用稳定的本地 ID，后端在 `src/voices.js` 中映射到火山引擎 speaker/resource。
@@ -445,6 +483,7 @@ node --check src/dictation.js
 node --check src/storage.js
 node --check public/app.js
 node --check public/speaking.js
+node --check public/voice-notes.js
 node --check public/dictation.js
 ```
 
@@ -460,4 +499,5 @@ node --check public/dictation.js
 - `data/speaking-history.json` 和 `data/speaking-recordings/` 正常写入。
 - 在录音下方点击 Transcribe 自动生成回答文字稿，再点击 Analyze 得到评分和改写范文。
 - 分析结果默认折叠，点击 Expand/Collapse 可以展开或收起长范文。
+- 打开 `/voice-notes.html`，直接录音并转写，确认 `data/voice-notes-history.json` 正常写入。
 - 配置 `SITE_PASSWORD` 后，未登录访问页面会跳转登录页，未登录 API 返回 401；登录后可以正常使用 TTS、ASR 和历史记录。
