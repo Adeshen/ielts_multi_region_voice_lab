@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { promises as fs } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import express from "express";
 import {
@@ -30,6 +30,14 @@ import { analyzeSpeakingAnswer, reviewDictationAttempt } from "./src/deepseek.js
 import { compareDictation } from "./src/dictation.js";
 import { listVoices, resolveVoiceIds } from "./src/voices.js";
 import { synthesizeSpeech, validateCredentials } from "./src/volcengine.js";
+import {
+  audioObjectExists,
+  deleteAudioObject,
+  publicAudioUrl,
+  readAudioObject,
+  saveAudioObject,
+  storageMode
+} from "./src/audioStore.js";
 
 const app = express();
 const host = process.env.HOST || "127.0.0.1";
@@ -222,9 +230,9 @@ app.use((request, response, next) => {
 
 app.use(express.json({ limit: "32mb" }));
 app.use(express.static(publicDir));
-app.use("/audio", express.static(audioDir, { fallthrough: false }));
-app.use("/recordings", express.static(recordingDir, { fallthrough: false }));
-app.use("/speaking-recordings", express.static(speakingRecordingDir, { fallthrough: false }));
+app.get("/audio/:filename", serveAudioObject("audio", audioDir, "audio/mpeg"));
+app.get("/recordings/:filename", serveAudioObject("recordings", recordingDir));
+app.get("/speaking-recordings/:filename", serveAudioObject("speaking-recordings", speakingRecordingDir));
 
 function clampNumber(value, fallback, min, max) {
   const numeric = Number(value);
@@ -243,6 +251,43 @@ function publicItemFromVoice({ voice, filename, audioUrl }) {
     gender: voice.gender,
     filename,
     audioUrl
+  };
+}
+
+function contentTypeForMimeType(mimeType) {
+  return mimeType || "application/octet-stream";
+}
+
+function serveAudioObject(category, localDir, fallbackContentType) {
+  return async (request, response, next) => {
+    try {
+      const filename = request.params.filename;
+      if (typeof filename !== "string" || filename.includes("/") || filename.includes("..")) {
+        return response.status(400).json({ error: "Audio filename is invalid." });
+      }
+
+      const object = await readAudioObject({
+        category,
+        localDir,
+        filename,
+        range: request.headers.range,
+        fallbackContentType
+      });
+
+      response.status(object.statusCode);
+      Object.entries(object.headers).forEach(([key, value]) => {
+        if (value) {
+          response.setHeader(key, value);
+        }
+      });
+
+      await pipeline(object.content, response);
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return response.status(404).json({ error: "Audio file not found." });
+      }
+      next(error);
+    }
   };
 }
 
@@ -286,6 +331,10 @@ app.get("/api/voices", (_request, response) => {
   response.json(listVoices());
 });
 
+app.get("/api/storage", (_request, response) => {
+  response.json({ mode: storageMode() });
+});
+
 app.get("/api/history", async (_request, response, next) => {
   try {
     response.json(await readHistory());
@@ -324,8 +373,14 @@ app.post("/api/tts", async (request, response, next) => {
       try {
         const audioBuffer = await synthesizeSpeech({ text, voice, speedRatio, volumeRatio });
         const filename = `${recordId}-${voice.id}.mp3`;
-        await fs.writeFile(path.join(audioDir, filename), audioBuffer);
-        items.push(publicItemFromVoice({ voice, filename, audioUrl: `/audio/${filename}` }));
+        await saveAudioObject({
+          category: "audio",
+          localDir: audioDir,
+          filename,
+          buffer: audioBuffer,
+          contentType: "audio/mpeg"
+        });
+        items.push(publicItemFromVoice({ voice, filename, audioUrl: publicAudioUrl("audio", filename) }));
       } catch (error) {
         console.error(`TTS failed for ${voice.id} (${voice.speaker || voice.voiceType}):`, error.message);
         errors.push({
@@ -377,12 +432,18 @@ app.post("/api/history/:id/recordings", async (request, response, next) => {
 
     const recordingId = crypto.randomUUID();
     const filename = `${record.id}-${recordingId}.${parsed.extension}`;
-    await fs.writeFile(path.join(recordingDir, filename), parsed.buffer);
+    await saveAudioObject({
+      category: "recordings",
+      localDir: recordingDir,
+      filename,
+      buffer: parsed.buffer,
+      contentType: contentTypeForMimeType(parsed.mimeType)
+    });
 
     const recording = {
       id: recordingId,
       filename,
-      audioUrl: `/recordings/${filename}`,
+      audioUrl: publicAudioUrl("recordings", filename),
       mimeType: parsed.mimeType,
       createdAt: new Date().toISOString()
     };
@@ -409,10 +470,10 @@ app.delete("/api/history/:id/recordings/:recordingId", async (request, response,
     }
 
     if (typeof recording.filename === "string" && !recording.filename.includes("..")) {
-      await fs.unlink(path.join(recordingDir, recording.filename)).catch((error) => {
-        if (error.code !== "ENOENT") {
-          throw error;
-        }
+      await deleteAudioObject({
+        category: "recordings",
+        localDir: recordingDir,
+        filename: recording.filename
       });
     }
 
@@ -485,7 +546,13 @@ app.post("/api/dictation", async (request, response, next) => {
     const recordId = crypto.randomUUID();
     const audioBuffer = await synthesizeSpeech({ text: sourceText, voice, speedRatio, volumeRatio });
     const filename = `${recordId}-dictation-${voice.id}.mp3`;
-    await fs.writeFile(path.join(audioDir, filename), audioBuffer);
+    await saveAudioObject({
+      category: "audio",
+      localDir: audioDir,
+      filename,
+      buffer: audioBuffer,
+      contentType: "audio/mpeg"
+    });
 
     const record = {
       id: recordId,
@@ -494,8 +561,8 @@ app.post("/api/dictation", async (request, response, next) => {
       speedRatio,
       volumeRatio,
       filename,
-      audioUrl: `/audio/${filename}`,
-      voice: publicItemFromVoice({ voice, filename, audioUrl: `/audio/${filename}` }),
+      audioUrl: publicAudioUrl("audio", filename),
+      voice: publicItemFromVoice({ voice, filename, audioUrl: publicAudioUrl("audio", filename) }),
       attempts: []
     };
 
@@ -671,13 +738,19 @@ app.post("/api/voice-notes", async (request, response, next) => {
 
     const recordId = crypto.randomUUID();
     const filename = `voice-note-${recordId}.${parsed.extension}`;
-    await fs.writeFile(path.join(speakingRecordingDir, filename), parsed.buffer);
+    await saveAudioObject({
+      category: "speaking-recordings",
+      localDir: speakingRecordingDir,
+      filename,
+      buffer: parsed.buffer,
+      contentType: contentTypeForMimeType(parsed.mimeType)
+    });
 
     const record = {
       id: recordId,
       title: String(request.body?.title ?? "").trim().slice(0, 80) || "Voice note",
       filename,
-      audioUrl: `/speaking-recordings/${filename}`,
+      audioUrl: publicAudioUrl("speaking-recordings", filename),
       mimeType: parsed.mimeType,
       createdAt: new Date().toISOString()
     };
@@ -706,7 +779,9 @@ app.post("/api/voice-notes/:id/transcribe", async (request, response, next) => {
       });
     }
 
-    await fs.access(path.join(speakingRecordingDir, record.filename));
+    if (!(await audioObjectExists({ category: "speaking-recordings", localDir: speakingRecordingDir, filename: record.filename }))) {
+      return response.status(404).json({ error: "Voice note audio file not found." });
+    }
     const transcription = await transcribeAudioFile({
       audioUrl: publicSpeakingRecordingUrl(record.filename),
       filename: record.filename,
@@ -803,12 +878,18 @@ app.post("/api/speaking/:id/recordings", async (request, response, next) => {
 
     const recordingId = crypto.randomUUID();
     const filename = `${record.id}-${recordingId}.${parsed.extension}`;
-    await fs.writeFile(path.join(speakingRecordingDir, filename), parsed.buffer);
+    await saveAudioObject({
+      category: "speaking-recordings",
+      localDir: speakingRecordingDir,
+      filename,
+      buffer: parsed.buffer,
+      contentType: contentTypeForMimeType(parsed.mimeType)
+    });
 
     const recording = {
       id: recordingId,
       filename,
-      audioUrl: `/speaking-recordings/${filename}`,
+      audioUrl: publicAudioUrl("speaking-recordings", filename),
       mimeType: parsed.mimeType,
       createdAt: new Date().toISOString()
     };
@@ -835,10 +916,10 @@ app.delete("/api/speaking/:id/recordings/:recordingId", async (request, response
     }
 
     if (typeof recording.filename === "string" && !recording.filename.includes("..")) {
-      await fs.unlink(path.join(speakingRecordingDir, recording.filename)).catch((error) => {
-        if (error.code !== "ENOENT") {
-          throw error;
-        }
+      await deleteAudioObject({
+        category: "speaking-recordings",
+        localDir: speakingRecordingDir,
+        filename: recording.filename
       });
     }
 
@@ -877,7 +958,9 @@ app.post("/api/speaking/:id/recordings/:recordingId/transcribe", async (request,
       });
     }
 
-    await fs.access(path.join(speakingRecordingDir, recording.filename));
+    if (!(await audioObjectExists({ category: "speaking-recordings", localDir: speakingRecordingDir, filename: recording.filename }))) {
+      return response.status(404).json({ error: "Recording audio file not found." });
+    }
     const transcription = await transcribeAudioFile({
       audioUrl: publicSpeakingRecordingUrl(recording.filename),
       filename: recording.filename,

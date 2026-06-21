@@ -22,6 +22,7 @@
 - 纯口语记录保存在本地 `data/voice-notes-history.json`，录音文件复用 `data/speaking-recordings/`。
 - 听写记录保存在本地 `data/dictation-history.json`，听写音频复用 `data/audio/`。
 - 历史元数据保存在本地 `data/history.json`。
+- 支持配置火山引擎 TOS 对象存储；配置后新生成的 TTS、听写音频和录音文件会写入 TOS 桶，旧本地音频仍可回退播放。
 - 火山引擎凭证只放在 `.env`，不会暴露给前端页面。
 
 ## 案例演示
@@ -86,6 +87,12 @@ VOLCENGINE_ASR_QUERY_ENDPOINT=https://openspeech.bytedance.com/api/v3/auc/bigmod
 VOLCENGINE_ASR_RESOURCE_ID=volc.seedasr.auc
 VOLCENGINE_ASR_MODEL_NAME=bigmodel
 VOLCENGINE_ASR_AUDIO_BASE_URL=https://your-public-tunnel.example.com
+TOS_BUCKET=english-audio-019eead1a8f778e4b0edbcb18a2b1b0f-tosalias
+TOS_REGION=cn-beijing
+TOS_ENDPOINT=tos-cn-beijing.volces.com
+TOS_ACCESS_KEY_ID=your_tos_access_key_id_here
+TOS_ACCESS_KEY_SECRET=your_tos_access_key_secret_here
+TOS_PREFIX=ielts-voice-lab
 SITE_PASSWORD=choose_a_site_password_here
 SITE_SESSION_SECRET=generate_a_long_random_session_secret_here
 HOST=127.0.0.1
@@ -105,6 +112,11 @@ PORT=3000
 - `VOLCENGINE_ASR_RESOURCE_ID=volc.seedasr.auc`：豆包录音文件识别 2.0 资源 ID。
 - `VOLCENGINE_ASR_MODEL_NAME=bigmodel`：录音文件识别模型名。
 - `VOLCENGINE_ASR_AUDIO_BASE_URL`：火山 ASR 需要能公网访问录音文件。例如用 ngrok/cloudflared 暴露本地 `http://127.0.0.1:3000` 后，把公网 HTTPS 地址填在这里。
+- `TOS_BUCKET`：火山引擎 TOS 桶名，本项目默认示例为 `english-audio-019eead1a8f778e4b0edbcb18a2b1b0f-tosalias`。
+- `TOS_REGION`：TOS 所在地域，例如 `cn-beijing`。
+- `TOS_ENDPOINT`：TOS endpoint，例如 `tos-cn-beijing.volces.com`。
+- `TOS_ACCESS_KEY_ID` / `TOS_ACCESS_KEY_SECRET`：火山账号访问密钥。注意这不是语音 App ID、Access Token 或 Secret Key。
+- `TOS_PREFIX`：写入桶内的对象前缀，默认 `ielts-voice-lab`。
 - `SITE_PASSWORD`：站点访问密码。配置后，网页、API、音频文件都会要求先登录。
 - `SITE_SESSION_SECRET`：登录 cookie 和 ASR 音频签名用的随机密钥，建议使用长随机字符串。
 - `HOST=127.0.0.1`：仅监听本机，避免局域网暴露。
@@ -128,7 +140,10 @@ PORT=3000
   V3 接口返回多段事件数据，后端会解析每段 JSON 事件，把其中的 base64 音频数据解码并拼接为完整 MP3。
 
 - **本地音频持久化**
-  每次生成的音频写入 `data/audio/{recordId}-{voiceId}.mp3`，网页通过 `/audio/...` 播放。
+  未配置 TOS 时，每次生成的音频写入 `data/audio/{recordId}-{voiceId}.mp3`，网页通过 `/audio/...` 播放。
+
+- **火山引擎 TOS 音频存储**
+  配置 `TOS_BUCKET`、`TOS_REGION`、`TOS_ENDPOINT`、`TOS_ACCESS_KEY_ID` 和 `TOS_ACCESS_KEY_SECRET` 后，新生成的 TTS 音频、Dictation 音频、跟读录音、Speaking 录音和 Voice notes 录音会写入 TOS。前端仍使用 `/audio/...`、`/recordings/...`、`/speaking-recordings/...` 访问，由 Express 做鉴权并从 TOS 流式转发，因此不需要把桶设为公开读。删除历史记录时会同步删除对应 TOS 对象，并兼容清理旧的本地文件。
 
 - **Dictation 听写训练**
   新增 `/dictation.html`。用户输入句子后选择音色和语速生成听写音频，页面默认隐藏原文；也可以在 Audio comparison 历史音频旁点击 Dictation，直接复用已经生成的 MP3，不再次调用火山 TTS。提交听写答案后，后端做词级 diff，返回正确词、漏听词、多写词、拼写相近词、wrong word、function words 漏听和 179 高频核心词命中情况。
@@ -195,6 +210,7 @@ PORT=3000
 │   └── dictation.js    # 听写训练页面交互逻辑
 ├── src/
 │   ├── dictation.js    # 听写词级 diff 和错词统计
+│   ├── audioStore.js   # 本地/TOS 音频对象存储
 │   ├── storage.js      # 本地音频和历史记录读写
 │   ├── volcengineAsr.js # 火山语音 ASR 录音文件识别
 │   ├── deepseek.js     # DeepSeek 口语评分和范文改写
@@ -222,6 +238,18 @@ PORT=3000
 ### `GET /api/history`
 
 返回历史记录，按最新生成时间倒序排列。
+
+### `GET /api/storage`
+
+返回当前音频对象存储模式。
+
+返回示例：
+
+```json
+{
+  "mode": "tos"
+}
+```
 
 ### `POST /api/tts`
 
@@ -446,10 +474,16 @@ requested resource not granted
 
 ### 生成的音频在哪里？
 
-音频文件在：
+未配置 TOS 时，音频文件在：
 
 ```text
 data/audio/
+```
+
+配置 TOS 后，新音频对象写入桶：
+
+```text
+english-audio-019eead1a8f778e4b0edbcb18a2b1b0f-tosalias/ielts-voice-lab/
 ```
 
 历史记录在：
@@ -481,6 +515,7 @@ node --check src/volcengineAsr.js
 node --check src/deepseek.js
 node --check src/dictation.js
 node --check src/storage.js
+node --check src/audioStore.js
 node --check public/app.js
 node --check public/speaking.js
 node --check public/voice-notes.js

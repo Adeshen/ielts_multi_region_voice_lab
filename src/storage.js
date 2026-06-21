@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { deleteAudioObject } from "./audioStore.js";
 
 export const dataDir = path.join(process.cwd(), "data");
 export const audioDir = path.join(dataDir, "audio");
@@ -115,20 +116,14 @@ export async function removeAudioFiles(record) {
   );
 
   const deletions = [
-    ...[...audioFilenames].map((filename) => ({ dir: audioDir, filename })),
-    ...[...recordingFilenames].map((filename) => ({ dir: recordingDir, filename }))
+    ...[...audioFilenames].map((filename) => ({ category: "audio", dir: audioDir, filename })),
+    ...[...recordingFilenames].map((filename) => ({ category: "recordings", dir: recordingDir, filename }))
   ];
 
   await Promise.all(
-    deletions.map(async ({ dir, filename }) => {
-      try {
-        await fs.unlink(path.join(dir, filename));
-      } catch (error) {
-        if (error.code !== "ENOENT") {
-          throw error;
-        }
-      }
-    })
+    deletions.map(({ category, dir, filename }) =>
+      deleteAudioObject({ category, localDir: dir, filename })
+    )
   );
 }
 
@@ -140,15 +135,9 @@ export async function removeSpeakingRecordFiles(record) {
   );
 
   await Promise.all(
-    [...filenames].map(async (filename) => {
-      try {
-        await fs.unlink(path.join(speakingRecordingDir, filename));
-      } catch (error) {
-        if (error.code !== "ENOENT") {
-          throw error;
-        }
-      }
-    })
+    [...filenames].map((filename) =>
+      deleteAudioObject({ category: "speaking-recordings", localDir: speakingRecordingDir, filename })
+    )
   );
 }
 
@@ -162,15 +151,7 @@ export async function removeDictationRecordFiles(record) {
   );
 
   await Promise.all(
-    [...filenames].map(async (filename) => {
-      try {
-        await fs.unlink(path.join(audioDir, filename));
-      } catch (error) {
-        if (error.code !== "ENOENT") {
-          throw error;
-        }
-      }
-    })
+    [...filenames].map((filename) => deleteAudioObject({ category: "audio", localDir: audioDir, filename }))
   );
 }
 
@@ -180,14 +161,8 @@ export async function removeVoiceNoteRecordFiles(record) {
   );
 
   await Promise.all(
-    [...filenames].map(async (filename) => {
-      try {
-        await fs.unlink(path.join(speakingRecordingDir, filename));
-      } catch (error) {
-        if (error.code !== "ENOENT") {
-          throw error;
-        }
-      }
-    })
+    [...filenames].map((filename) =>
+      deleteAudioObject({ category: "speaking-recordings", localDir: speakingRecordingDir, filename })
+    )
   );
 }
