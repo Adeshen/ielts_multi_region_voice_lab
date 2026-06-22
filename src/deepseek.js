@@ -149,6 +149,90 @@ export async function analyzeSpeakingAnswer({ prompt, transcript, asrTiming = nu
   return extractJsonObject(content);
 }
 
+export async function improveVoiceNoteExpression({ title, transcript, asrTiming = null }) {
+  validateDeepseekCredentials();
+
+  const response = await fetch(deepseekApiUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: deepseekModel,
+      temperature: 0.35,
+      max_tokens: 2200,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You are an advanced English speaking coach for IELTS learners.",
+            "The learner recorded a free-form voice note, not necessarily an IELTS exam answer.",
+            "Improve spoken English expression while preserving the learner's original meaning and personal voice.",
+            "Focus on natural oral phrasing, more precise vocabulary, stronger collocations, and clearer organization.",
+            "Do not make the answer sound memorized, over-academic, or unnaturally formal.",
+            "If ASR timing evidence is provided, use it only for fluency/pacing suggestions.",
+            "Return strict JSON with no markdown."
+          ].join(" ")
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            task: "Upgrade this voice note into more natural spoken English and teach advanced useful vocabulary.",
+            title,
+            learnerTranscript: transcript,
+            asrTimingEvidence: asrTiming,
+            vocabularyReference: {
+              source: IELTS_CORE_VOCABULARY_LABEL,
+              coreVocabularyBank: IELTS_CORE_VOCABULARY
+            },
+            coachingPolicy: [
+              "Keep the improved version close to the learner's original idea.",
+              "Prefer spoken collocations and flexible chunks over rare dictionary words.",
+              "Recommend advanced words only when they fit naturally.",
+              "Give examples the learner can reuse in IELTS speaking or daily speech.",
+              "Identify grammar or wording upgrades only from the transcript; do not invent missing content."
+            ],
+            requiredJsonShape: {
+              summary: "brief diagnosis of the learner's expression",
+              upgradedExpression: "a polished but natural spoken version of the whole voice note",
+              organizationSuggestion: "how to structure this idea more clearly next time",
+              advancedVocabulary: [
+                {
+                  word: "advanced word or collocation",
+                  meaning: "simple learner-friendly meaning",
+                  naturalPhrase: "short reusable phrase",
+                  exampleSentence: "IELTS-style or daily speaking example"
+                }
+              ],
+              sentenceUpgrades: [
+                {
+                  original: "learner phrase or sentence",
+                  improved: "more natural spoken version",
+                  reason: "short explanation"
+                }
+              ],
+              usefulChunks: ["short reusable spoken chunks from the upgraded expression"],
+              fluencyTip: "one pacing or fluency tip, using ASR timing if available",
+              practiceDrill: "one concrete speaking drill for the next recording"
+            }
+          })
+        }
+      ]
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload.error?.message || payload.message || `DeepSeek request failed with ${response.status}.`;
+    throw new Error(message);
+  }
+
+  const content = payload.choices?.[0]?.message?.content;
+  return extractJsonObject(content);
+}
+
 export async function reviewDictationAttempt({ sourceText, userText, deterministicResult }) {
   validateDeepseekCredentials();
 

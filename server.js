@@ -26,7 +26,7 @@ import {
   writeVoiceNoteRecords
 } from "./src/storage.js";
 import { transcribeAudioFile } from "./src/volcengineAsr.js";
-import { analyzeSpeakingAnswer, reviewDictationAttempt } from "./src/deepseek.js";
+import { analyzeSpeakingAnswer, improveVoiceNoteExpression, reviewDictationAttempt } from "./src/deepseek.js";
 import { compareDictation } from "./src/dictation.js";
 import { listVoices, resolveVoiceIds } from "./src/voices.js";
 import { synthesizeSpeech, validateCredentials } from "./src/volcengine.js";
@@ -798,6 +798,47 @@ app.post("/api/voice-notes/:id/transcribe", async (request, response, next) => {
     };
     await writeVoiceNoteRecords(records);
     response.json({ record, transcript: transcription.text });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/voice-notes/:id/analyze", async (request, response, next) => {
+  try {
+    const records = await readVoiceNoteRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Voice note not found." });
+    }
+
+    const transcript = String(request.body?.transcript ?? record.transcript ?? "").trim();
+    if (!transcript) {
+      return response.status(400).json({ error: "Transcribe the voice note before improving the expression." });
+    }
+    if (transcript.length > maxSpeakingPromptLength) {
+      return response.status(400).json({ error: `Transcript is too long. Keep it under ${maxSpeakingPromptLength} characters.` });
+    }
+
+    const expressionAnalysis = await improveVoiceNoteExpression({
+      title: record.title,
+      transcript,
+      asrTiming: record.transcription
+        ? {
+            segments: record.transcription.segments ?? [],
+            timing: record.transcription.timing ?? null
+          }
+        : null
+    });
+
+    record.transcript = transcript;
+    record.expressionAnalysis = {
+      ...expressionAnalysis,
+      provider: "deepseek",
+      model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+      createdAt: new Date().toISOString()
+    };
+    await writeVoiceNoteRecords(records);
+    response.json({ record, expressionAnalysis: record.expressionAnalysis });
   } catch (error) {
     next(error);
   }

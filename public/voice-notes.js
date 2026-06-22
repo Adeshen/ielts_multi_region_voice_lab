@@ -230,6 +230,82 @@ function renderTranscript(record) {
   `;
 }
 
+function renderChipList(items, emptyText) {
+  const values = (items ?? []).filter(Boolean);
+  if (!values.length) {
+    return `<p class="muted">${escapeHtml(emptyText)}</p>`;
+  }
+
+  return `
+    <div class="analysis-chip-list">
+      ${values.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+    </div>
+  `;
+}
+
+function renderExpressionAnalysis(analysis) {
+  if (!analysis) {
+    return "";
+  }
+
+  const vocabularyCards = (analysis.advancedVocabulary ?? [])
+    .map(
+      (item) => `
+        <div class="vocab-card">
+          <strong>${escapeHtml(item.word ?? "")}</strong>
+          <p>${escapeHtml(item.meaning ?? "")}</p>
+          <p class="muted">${escapeHtml(item.naturalPhrase ?? "")}</p>
+          <p>${escapeHtml(item.exampleSentence ?? "")}</p>
+        </div>
+      `
+    )
+    .join("");
+
+  const upgrades = (analysis.sentenceUpgrades ?? [])
+    .map(
+      (item) => `
+        <div class="analysis-correction">
+          <p><strong>Original:</strong> ${escapeHtml(item.original ?? "")}</p>
+          <p><strong>Better:</strong> ${escapeHtml(item.improved ?? "")}</p>
+          <p class="muted">${escapeHtml(item.reason ?? "")}</p>
+        </div>
+      `
+    )
+    .join("");
+
+  return `
+    <div class="analysis-panel voice-note-analysis">
+      <div class="analysis-header">
+        <div>
+          <p class="eyebrow">DeepSeek coach</p>
+          <h4>Expression upgrade</h4>
+        </div>
+        <div class="recording-compact-meta"><span>Ready</span></div>
+      </div>
+      <div class="analysis-body">
+        <p class="analysis-summary">${escapeHtml(analysis.summary ?? "")}</p>
+        <div class="analysis-section">
+          <h4>Better spoken version</h4>
+          <p class="model-answer">${escapeHtml(analysis.upgradedExpression ?? "")}</p>
+        </div>
+        ${analysis.organizationSuggestion ? `<p class="muted">${escapeHtml(analysis.organizationSuggestion)}</p>` : ""}
+        ${
+          vocabularyCards
+            ? `<div class="analysis-section lexical-section"><h4>Advanced useful vocabulary</h4><div class="vocab-card-grid">${vocabularyCards}</div></div>`
+            : ""
+        }
+        <div class="analysis-section">
+          <h4>Reusable speaking chunks</h4>
+          ${renderChipList(analysis.usefulChunks, "No reusable chunks reported.")}
+        </div>
+        ${upgrades ? `<div class="analysis-section"><h4>Sentence upgrades</h4>${upgrades}</div>` : ""}
+        ${analysis.fluencyTip ? `<p class="muted">${escapeHtml(analysis.fluencyTip)}</p>` : ""}
+        ${analysis.practiceDrill ? `<p class="muted">${escapeHtml(analysis.practiceDrill)}</p>` : ""}
+      </div>
+    </div>
+  `;
+}
+
 function renderCard(record, { current = false } = {}) {
   return `
     <article class="history-card voice-note-card" data-id="${escapeHtml(record.id)}">
@@ -246,11 +322,13 @@ function renderCard(record, { current = false } = {}) {
               : `<button type="button" class="ghost-button compact-button" data-open-note="${escapeHtml(record.id)}">Open</button>`
           }
           <button type="button" class="ghost-button compact-button" data-transcribe-note="${escapeHtml(record.id)}">Transcribe</button>
+          <button type="button" class="ghost-button compact-button" data-analyze-note="${escapeHtml(record.id)}">Improve</button>
           <button type="button" class="danger-button compact-button" data-delete-note="${escapeHtml(record.id)}">Delete</button>
         </div>
       </div>
       <audio controls preload="metadata" src="${escapeHtml(record.audioUrl)}"></audio>
       ${renderTranscript(record)}
+      ${renderExpressionAnalysis(record.expressionAnalysis)}
     </article>
   `;
 }
@@ -351,6 +429,28 @@ document.addEventListener("click", async (event) => {
     } finally {
       transcribeButton.disabled = false;
       transcribeButton.textContent = "Transcribe";
+    }
+    return;
+  }
+
+  const analyzeButton = event.target.closest("[data-analyze-note]");
+  if (analyzeButton) {
+    analyzeButton.disabled = true;
+    analyzeButton.textContent = "Improving...";
+    try {
+      const payload = await apiFetch(`/api/voice-notes/${analyzeButton.dataset.analyzeNote}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      activeRecord = payload.record;
+      await loadRecords();
+      setStatus("Expression upgrade ready.");
+    } catch (error) {
+      setStatus(error.message, "error");
+    } finally {
+      analyzeButton.disabled = false;
+      analyzeButton.textContent = "Improve";
     }
     return;
   }

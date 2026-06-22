@@ -9,7 +9,7 @@
 - 支持 Dictation 听写模式：可生成新听写音频，也可直接复用 Audio comparison 历史音频；输入答案后自动评分和标出错词，并可选用 DeepSeek 做更灵活的 AI 复核。
 - 支持在历史记录里直接录制自己的朗读，并和生成音频对比播放。
 - 支持单独的口语录音页面，可以自己输入 IELTS 题目/文段，并在同一个题目下保存多次回答录音。
-- 支持纯口语记录页面，只做自由录音和 ASR 转写，不进入 IELTS 评分和范文分析流程。
+- 支持纯口语记录页面，可以自由录音、ASR 转写，并用 DeepSeek 生成更自然的口语表达和高级词汇建议。
 - 支持调用豆包 Seed ASR 识别口语录音，再调用 DeepSeek 生成 IELTS 评分、问题诊断和改写范文。
 - 口语分析会对齐 12 类 IELTS 母题和 179 个高频核心词及自然变体，提示已使用词、可补充词和范文目标词。
 - 口语分析会提取 Part 2 范文关键词和展开路线，方便一分钟准备时做 cue-card 笔记。
@@ -169,7 +169,7 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
   新增 `/speaking.html`，可手动输入题目或文段，保存为练习卡片，再在同一个题目下反复录制多个 answer attempts。录音默认限制为 2 分钟，适合 IELTS Part 2，也可以切换为 30 秒、1 分钟或 3 分钟；所有录音都会限制在 3 分钟以内。每条录音都可以单独播放、转写、分析和删除。该模式不调用火山 TTS。
 
 - **纯口语记录模式**
-  新增 `/voice-notes.html`，用于自由录音和转写。它不需要先创建 IELTS 题目，也不会调用 DeepSeek 做评分；适合日常 shadowing、复述、自由表达或临时口语日记。录音可设置 30 秒、1 分钟、2 分钟或 3 分钟上限，保存后可自动或手动调用豆包 Seed ASR 转写。
+  新增 `/voice-notes.html`，用于自由录音、转写和表达升级。它不需要先创建 IELTS 题目，也不做正式 IELTS 打分；适合日常 shadowing、复述、自由表达或临时口语日记。录音可设置 30 秒、1 分钟、2 分钟或 3 分钟上限，保存后可自动或手动调用豆包 Seed ASR 转写，再点击 Improve 让 DeepSeek 生成更自然的口语版本、可复用表达块、高级词汇、句子升级和练习建议。
 
 - **DeepSeek 口语分析**
   对录音填写回答文字稿后，后端调用 DeepSeek 生成 IELTS 维度评分、改进建议、句子修正和更自然的 Band 7.5-8.0 范文。分析还会输出 Part 2 cue-card 关键词和 speaking route，帮助学习者从关键词复述，而不是死背整篇范文。如果该录音先经过火山 ASR 转写，ASR 分段时间戳和停顿/语速摘要也会一起传给 DeepSeek，用于辅助判断 fluency、pacing 和 organization。当前分析不做真正 phonetic pronunciation 评分。
@@ -445,6 +445,10 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 ### `POST /api/voice-notes/:id/transcribe`
 
 使用豆包 Seed ASR 对纯口语录音做转写，并把文字稿和 ASR timing evidence 保存到该记录。
+
+### `POST /api/voice-notes/:id/analyze`
+
+使用 DeepSeek 分析纯口语记录的文字稿，生成更自然的口语表达、高级词汇、句子升级、表达块和练习建议。该接口不做 IELTS Band 打分，适合自由口语记录。
 
 ### `DELETE /api/voice-notes/:id`
 
