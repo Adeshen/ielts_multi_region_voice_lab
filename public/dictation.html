@@ -74,9 +74,20 @@
             <h2>Dictation history</h2>
           </div>
           <div class="history-actions">
+            <span id="dictation-page-status" class="page-status"></span>
+            <button type="button" id="dictation-prev" class="ghost-button">Prev</button>
+            <button type="button" id="dictation-next" class="ghost-button">Next</button>
             <button type="button" id="clear-dictation" class="ghost-button">Clear</button>
           </div>
         </div>
+        <div class="history-filters compact-history-filters" aria-label="Dictation history filters">
+          <label class="filter-field" for="dictation-search">
+            <span>Search</span>
+            <input id="dictation-search" type="search" placeholder="Sentence, voice, answer, mistakes" />
+          </label>
+          <button type="button" id="dictation-reset" class="ghost-button">Reset</button>
+        </div>
+        <div id="dictation-filter-status" class="filter-status"></div>
         <div id="dictation-list" class="history-list empty-state">No dictation records yet.</div>
       </section>
     </main>

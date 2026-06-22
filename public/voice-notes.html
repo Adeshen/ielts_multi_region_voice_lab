@@ -59,9 +59,20 @@
             <h2>Voice notes</h2>
           </div>
           <div class="history-actions">
+            <span id="voice-note-page-status" class="page-status"></span>
+            <button type="button" id="voice-note-prev" class="ghost-button">Prev</button>
+            <button type="button" id="voice-note-next" class="ghost-button">Next</button>
             <button type="button" id="clear-voice-notes" class="ghost-button">Clear</button>
           </div>
         </div>
+        <div class="history-filters compact-history-filters" aria-label="Voice notes filters">
+          <label class="filter-field" for="voice-note-search">
+            <span>Search</span>
+            <input id="voice-note-search" type="search" placeholder="Title, transcript, upgraded expression" />
+          </label>
+          <button type="button" id="voice-note-reset" class="ghost-button">Reset</button>
+        </div>
+        <div id="voice-note-filter-status" class="filter-status"></div>
         <div id="voice-note-status" class="status"></div>
         <div id="voice-note-current" class="dictation-current empty-state">Record a voice note to transcribe it.</div>
         <div id="voice-note-list" class="history-list empty-state">No voice notes yet.</div>

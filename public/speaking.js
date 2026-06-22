@@ -5,13 +5,23 @@ const sampleButton = document.querySelector("#prompt-sample");
 const saveButton = document.querySelector("#save-prompt");
 const recordingLimitSelect = document.querySelector("#recording-limit");
 const clearButton = document.querySelector("#clear-speaking");
+const searchInput = document.querySelector("#speaking-search");
+const resetButton = document.querySelector("#speaking-reset");
+const prevButton = document.querySelector("#speaking-prev");
+const nextButton = document.querySelector("#speaking-next");
+const pageStatus = document.querySelector("#speaking-page-status");
+const filterStatus = document.querySelector("#speaking-filter-status");
 const statusEl = document.querySelector("#speaking-status");
 const listEl = document.querySelector("#speaking-list");
 
 let records = [];
+let filteredRecords = [];
+let recordPage = 1;
 let activeRecording = null;
 const expandedRecordings = new Set();
 const expandedAnalyses = new Set();
+const expandedPromptCards = new Set();
+const historyPageSize = 4;
 
 const samples = [
   "Describe a time when you learned something useful from another person.",
@@ -144,6 +154,40 @@ function formatDuration(seconds) {
 
 function audioFrameFor(audio) {
   return audio.closest(".history-audio");
+}
+
+function speakingSearchText(record) {
+  return [
+    record.title,
+    record.prompt,
+    ...(record.recordings ?? []).flatMap((recording) => [
+      recording.transcript,
+      recording.analysis?.summary,
+      recording.analysis?.modelAnswer,
+      recording.analysis?.topicFamily,
+      ...(recording.analysis?.modelAnswerTargetWords ?? []),
+      ...(recording.analysis?.cueCardKeywords ?? [])
+    ])
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function applyFilters({ resetPage = true } = {}) {
+  const query = searchInput.value.trim().toLowerCase();
+  filteredRecords = records.filter((record) => !query || speakingSearchText(record).includes(query));
+  if (resetPage) {
+    recordPage = 1;
+  }
+}
+
+function updatePager(totalPages) {
+  const hasRecords = filteredRecords.length > 0;
+  prevButton.disabled = !hasRecords || recordPage <= 1;
+  nextButton.disabled = !hasRecords || recordPage >= totalPages;
+  pageStatus.textContent = hasRecords ? `${recordPage} / ${totalPages}` : "";
+  filterStatus.textContent = records.length ? `${filteredRecords.length} of ${records.length} prompts` : "";
 }
 
 function analysisBand(analysis) {
@@ -433,14 +477,29 @@ function renderRecordings(record) {
 }
 
 function renderRecords() {
+  applyFilters({ resetPage: false });
+
   if (!records.length) {
     listEl.className = "history-list empty-state";
     listEl.textContent = "No speaking prompts yet.";
+    updatePager(1);
     return;
   }
 
+  if (!filteredRecords.length) {
+    listEl.className = "history-list empty-state";
+    listEl.textContent = "No speaking prompts match this search.";
+    updatePager(1);
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / historyPageSize));
+  recordPage = Math.min(recordPage, totalPages);
+  const startIndex = (recordPage - 1) * historyPageSize;
+  const pageRecords = filteredRecords.slice(startIndex, startIndex + historyPageSize);
+
   listEl.className = "history-list";
-  listEl.innerHTML = records
+  listEl.innerHTML = pageRecords
     .map(
       (record) => {
         const recordingCount = record.recordings?.length ?? 0;
@@ -448,33 +507,38 @@ function renderRecords() {
         const statusText = recordingCount
           ? `${recordingCount} attempt${recordingCount === 1 ? "" : "s"} saved for this prompt.`
           : "Ready to record your first answer.";
+        const isExpanded = expandedPromptCards.has(record.id);
+        const transcriptCount = (record.recordings ?? []).filter((recording) => recording.transcript).length;
+        const analysisCount = (record.recordings ?? []).filter((recording) => recording.analysis).length;
 
         return `
-        <article class="history-card speaking-card" data-id="${escapeHtml(record.id)}">
+        <article class="history-card speaking-card ${isExpanded ? "is-expanded" : "is-collapsed"}" data-id="${escapeHtml(record.id)}">
           <div class="history-title-row">
             <div>
               <p class="eyebrow">${escapeHtml(formatDate(record.createdAt))}</p>
               <h3>${escapeHtml(record.title)}</h3>
               <div class="recording-compact-meta prompt-attempt-meta">
                 <span>${escapeHtml(recordingCount)} attempt${recordingCount === 1 ? "" : "s"}</span>
+                <span>${escapeHtml(transcriptCount)} transcript${transcriptCount === 1 ? "" : "s"}</span>
+                <span>${escapeHtml(analysisCount)} analysis</span>
               </div>
               <p class="history-text speaking-prompt-text">${escapeHtml(record.prompt)}</p>
             </div>
             <div class="history-card-actions">
-              <button type="button" class="primary-button" data-start-recording="${escapeHtml(record.id)}">${escapeHtml(recordingLabel)}</button>
-              <button type="button" class="ghost-button" data-stop-recording="${escapeHtml(record.id)}" disabled>Stop</button>
+              <button type="button" class="ghost-button" data-toggle-prompt="${escapeHtml(record.id)}">${isExpanded ? "Compact" : "Expand"}</button>
+              ${isExpanded ? `<button type="button" class="primary-button" data-start-recording="${escapeHtml(record.id)}">${escapeHtml(recordingLabel)}</button>` : ""}
+              ${isExpanded ? `<button type="button" class="ghost-button" data-stop-recording="${escapeHtml(record.id)}" disabled>Stop</button>` : ""}
               <button type="button" class="danger-button" data-delete-record="${escapeHtml(record.id)}">Delete</button>
             </div>
           </div>
-          <div class="record-status" data-record-status="${escapeHtml(record.id)}">${escapeHtml(statusText)}</div>
-          <div class="recordings-list">
-            ${renderRecordings(record)}
-          </div>
+          ${isExpanded ? `<div class="record-status" data-record-status="${escapeHtml(record.id)}">${escapeHtml(statusText)}</div>` : ""}
+          ${isExpanded ? `<div class="recordings-list">${renderRecordings(record)}</div>` : ""}
         </article>
       `
       }
     )
     .join("");
+  updatePager(totalPages);
 }
 
 async function apiFetch(url, options) {
@@ -492,6 +556,7 @@ async function apiFetch(url, options) {
 
 async function loadRecords() {
   records = await apiFetch("/api/speaking");
+  applyFilters({ resetPage: false });
   renderRecords();
 }
 
@@ -569,6 +634,7 @@ form.addEventListener("submit", async (event) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: promptInput.value })
     });
+    expandedPromptCards.add(record.id);
     await loadRecords();
     setStatus(`Saved prompt: ${record.title}`);
   } catch (error) {
@@ -586,6 +652,18 @@ sampleButton.addEventListener("click", () => {
 });
 
 listEl.addEventListener("click", async (event) => {
+  const togglePromptButton = event.target.closest("[data-toggle-prompt]");
+  if (togglePromptButton) {
+    const recordId = togglePromptButton.dataset.togglePrompt;
+    if (expandedPromptCards.has(recordId)) {
+      expandedPromptCards.delete(recordId);
+    } else {
+      expandedPromptCards.add(recordId);
+    }
+    renderRecords();
+    return;
+  }
+
   const startButton = event.target.closest("[data-start-recording]");
   if (startButton) {
     if (!recordingSupported()) {
@@ -732,6 +810,10 @@ listEl.addEventListener("click", async (event) => {
       return;
     }
     await apiFetch(`/api/speaking/${deleteRecordButton.dataset.deleteRecord}`, { method: "DELETE" });
+    expandedPromptCards.delete(deleteRecordButton.dataset.deleteRecord);
+    if (recordPage > 1 && filteredRecords.length % historyPageSize === 1) {
+      recordPage -= 1;
+    }
     await loadRecords();
     setStatus("Deleted one speaking prompt.");
   }
@@ -776,8 +858,34 @@ clearButton.addEventListener("click", async () => {
     return;
   }
   await apiFetch("/api/speaking", { method: "DELETE" });
+  recordPage = 1;
+  expandedPromptCards.clear();
+  expandedRecordings.clear();
+  expandedAnalyses.clear();
   await loadRecords();
   setStatus("Speaking prompts cleared.");
+});
+
+searchInput.addEventListener("input", () => {
+  applyFilters();
+  renderRecords();
+});
+
+resetButton.addEventListener("click", () => {
+  searchInput.value = "";
+  applyFilters();
+  renderRecords();
+});
+
+prevButton.addEventListener("click", () => {
+  recordPage = Math.max(1, recordPage - 1);
+  renderRecords();
+});
+
+nextButton.addEventListener("click", () => {
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / historyPageSize));
+  recordPage = Math.min(totalPages, recordPage + 1);
+  renderRecords();
 });
 
 promptInput.addEventListener("input", updateCounter);

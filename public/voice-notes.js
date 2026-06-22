@@ -4,13 +4,23 @@ const autoTranscribeInput = document.querySelector("#auto-transcribe");
 const startButton = document.querySelector("#start-voice-note");
 const stopButton = document.querySelector("#stop-voice-note");
 const clearButton = document.querySelector("#clear-voice-notes");
+const searchInput = document.querySelector("#voice-note-search");
+const resetButton = document.querySelector("#voice-note-reset");
+const prevButton = document.querySelector("#voice-note-prev");
+const nextButton = document.querySelector("#voice-note-next");
+const pageStatus = document.querySelector("#voice-note-page-status");
+const filterStatus = document.querySelector("#voice-note-filter-status");
 const statusEl = document.querySelector("#voice-note-status");
 const currentEl = document.querySelector("#voice-note-current");
 const listEl = document.querySelector("#voice-note-list");
 
 let records = [];
+let filteredRecords = [];
 let activeRecord = null;
 let activeRecording = null;
+let recordPage = 1;
+const expandedNoteRecords = new Set();
+const historyPageSize = 4;
 
 function setStatus(message, type = "info") {
   statusEl.textContent = message;
@@ -47,6 +57,44 @@ function selectedLimitSeconds() {
 
 function recordingSupported() {
   return Boolean(navigator.mediaDevices?.getUserMedia && (window.AudioContext || window.webkitAudioContext));
+}
+
+function voiceNoteSearchText(record) {
+  return [
+    record.title,
+    record.transcript,
+    record.expressionAnalysis?.summary,
+    record.expressionAnalysis?.upgradedExpression,
+    record.expressionAnalysis?.organizationSuggestion,
+    record.expressionAnalysis?.fluencyTip,
+    record.expressionAnalysis?.practiceDrill,
+    ...(record.expressionAnalysis?.usefulChunks ?? []),
+    ...(record.expressionAnalysis?.advancedVocabulary ?? []).flatMap((item) => [
+      item.word,
+      item.meaning,
+      item.naturalPhrase,
+      item.exampleSentence
+    ])
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function applyFilters({ resetPage = true } = {}) {
+  const query = searchInput.value.trim().toLowerCase();
+  filteredRecords = records.filter((record) => !query || voiceNoteSearchText(record).includes(query));
+  if (resetPage) {
+    recordPage = 1;
+  }
+}
+
+function updatePager(totalPages) {
+  const hasRecords = filteredRecords.length > 0;
+  prevButton.disabled = !hasRecords || recordPage <= 1;
+  nextButton.disabled = !hasRecords || recordPage >= totalPages;
+  pageStatus.textContent = hasRecords ? `${recordPage} / ${totalPages}` : "";
+  filterStatus.textContent = records.length ? `${filteredRecords.length} of ${records.length} notes` : "";
 }
 
 function mergeAudioBuffers(chunks) {
@@ -171,6 +219,7 @@ async function transcribeRecord(recordId) {
   setStatus("Submitting voice note to ASR. This can take up to about 60 seconds.");
   const payload = await apiFetch(`/api/voice-notes/${recordId}/transcribe`, { method: "POST" });
   activeRecord = payload.record;
+  expandedNoteRecords.add(payload.record.id);
   await loadRecords();
   setStatus("Transcript ready.");
 }
@@ -198,6 +247,7 @@ async function stopRecording({ automatic = false } = {}) {
       })
     });
     activeRecord = record;
+    expandedNoteRecords.add(record.id);
     await loadRecords();
     setStatus(automatic ? "Voice note saved after reaching the time limit." : "Voice note saved.");
     if (autoTranscribeInput.checked) {
@@ -307,28 +357,41 @@ function renderExpressionAnalysis(analysis) {
 }
 
 function renderCard(record, { current = false } = {}) {
+  const isExpanded = current || expandedNoteRecords.has(record.id);
+  const hasTranscript = Boolean(record.transcript);
+  const hasAnalysis = Boolean(record.expressionAnalysis);
   return `
-    <article class="history-card voice-note-card" data-id="${escapeHtml(record.id)}">
+    <article class="history-card voice-note-card ${isExpanded ? "is-expanded" : "is-collapsed"}" data-id="${escapeHtml(record.id)}">
       <div class="history-title-row">
         <div>
           <p class="eyebrow">${escapeHtml(formatDate(record.createdAt))}</p>
           <h3>${escapeHtml(record.title || "Voice note")}</h3>
-          ${record.transcript ? '<div class="recording-compact-meta"><span>Transcript ready</span></div>' : ""}
+          <div class="recording-compact-meta">
+            ${hasTranscript ? "<span>Transcript ready</span>" : "<span>No transcript</span>"}
+            ${hasAnalysis ? "<span>Expression ready</span>" : ""}
+          </div>
         </div>
         <div class="history-card-actions">
+          ${current ? "" : `<button type="button" class="ghost-button compact-button" data-toggle-note="${escapeHtml(record.id)}">${isExpanded ? "Compact" : "Expand"}</button>`}
           ${
             current
               ? ""
               : `<button type="button" class="ghost-button compact-button" data-open-note="${escapeHtml(record.id)}">Open</button>`
           }
-          <button type="button" class="ghost-button compact-button" data-transcribe-note="${escapeHtml(record.id)}">Transcribe</button>
-          <button type="button" class="ghost-button compact-button" data-analyze-note="${escapeHtml(record.id)}">Improve</button>
+          ${isExpanded ? `<button type="button" class="ghost-button compact-button" data-transcribe-note="${escapeHtml(record.id)}">Transcribe</button>` : ""}
+          ${isExpanded ? `<button type="button" class="ghost-button compact-button" data-analyze-note="${escapeHtml(record.id)}">Improve</button>` : ""}
           <button type="button" class="danger-button compact-button" data-delete-note="${escapeHtml(record.id)}">Delete</button>
         </div>
       </div>
-      <audio controls preload="metadata" src="${escapeHtml(record.audioUrl)}"></audio>
-      ${renderTranscript(record)}
-      ${renderExpressionAnalysis(record.expressionAnalysis)}
+      ${
+        isExpanded
+          ? `
+            <audio controls preload="metadata" src="${escapeHtml(record.audioUrl)}"></audio>
+            ${renderTranscript(record)}
+            ${renderExpressionAnalysis(record.expressionAnalysis)}
+          `
+          : ""
+      }
     </article>
   `;
 }
@@ -353,18 +416,35 @@ function renderCurrent() {
 }
 
 function renderList() {
+  applyFilters({ resetPage: false });
+
   if (!records.length) {
     listEl.className = "history-list empty-state";
     listEl.textContent = "No voice notes yet.";
+    updatePager(1);
     return;
   }
 
+  if (!filteredRecords.length) {
+    listEl.className = "history-list empty-state";
+    listEl.textContent = "No voice notes match this search.";
+    updatePager(1);
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / historyPageSize));
+  recordPage = Math.min(recordPage, totalPages);
+  const startIndex = (recordPage - 1) * historyPageSize;
+  const pageRecords = filteredRecords.slice(startIndex, startIndex + historyPageSize);
+
   listEl.className = "history-list";
-  listEl.innerHTML = records.map((record) => renderCard(record)).join("");
+  listEl.innerHTML = pageRecords.map((record) => renderCard(record)).join("");
+  updatePager(totalPages);
 }
 
 async function loadRecords() {
   records = await apiFetch("/api/voice-notes");
+  applyFilters({ resetPage: false });
   if (activeRecord) {
     activeRecord = records.find((record) => record.id === activeRecord.id) ?? activeRecord;
   }
@@ -410,10 +490,26 @@ stopButton.addEventListener("click", () => {
 });
 
 document.addEventListener("click", async (event) => {
+  const toggleNoteButton = event.target.closest("[data-toggle-note]");
+  if (toggleNoteButton) {
+    const recordId = toggleNoteButton.dataset.toggleNote;
+    if (expandedNoteRecords.has(recordId)) {
+      expandedNoteRecords.delete(recordId);
+    } else {
+      expandedNoteRecords.add(recordId);
+    }
+    renderList();
+    return;
+  }
+
   const openButton = event.target.closest("[data-open-note]");
   if (openButton) {
     activeRecord = records.find((record) => record.id === openButton.dataset.openNote);
+    if (activeRecord) {
+      expandedNoteRecords.add(activeRecord.id);
+    }
     renderCurrent();
+    renderList();
     setStatus("Voice note loaded.");
     return;
   }
@@ -444,6 +540,7 @@ document.addEventListener("click", async (event) => {
         body: JSON.stringify({})
       });
       activeRecord = payload.record;
+      expandedNoteRecords.add(payload.record.id);
       await loadRecords();
       setStatus("Expression upgrade ready.");
     } catch (error) {
@@ -461,6 +558,10 @@ document.addEventListener("click", async (event) => {
     if (activeRecord?.id === deleteButton.dataset.deleteNote) {
       activeRecord = null;
     }
+    expandedNoteRecords.delete(deleteButton.dataset.deleteNote);
+    if (recordPage > 1 && filteredRecords.length % historyPageSize === 1) {
+      recordPage -= 1;
+    }
     await loadRecords();
     setStatus("Voice note deleted.");
   }
@@ -473,8 +574,32 @@ clearButton.addEventListener("click", async () => {
   }
   await apiFetch("/api/voice-notes", { method: "DELETE" });
   activeRecord = null;
+  recordPage = 1;
+  expandedNoteRecords.clear();
   await loadRecords();
   setStatus("Voice notes cleared.");
+});
+
+searchInput.addEventListener("input", () => {
+  applyFilters();
+  renderList();
+});
+
+resetButton.addEventListener("click", () => {
+  searchInput.value = "";
+  applyFilters();
+  renderList();
+});
+
+prevButton.addEventListener("click", () => {
+  recordPage = Math.max(1, recordPage - 1);
+  renderList();
+});
+
+nextButton.addEventListener("click", () => {
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / historyPageSize));
+  recordPage = Math.min(totalPages, recordPage + 1);
+  renderList();
 });
 
 loadRecords().catch((error) => setStatus(error.message, "error"));

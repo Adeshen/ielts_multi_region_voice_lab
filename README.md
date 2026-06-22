@@ -16,6 +16,7 @@
 - 口语分析结果支持折叠/展开，长范文不会把后续录音卡片挤得太远。
 - 支持站点密码保护，避免公开部署后被他人消耗 TTS/ASR/LLM 额度。
 - 支持历史记录展示、单条删除、清空历史。
+- TTS、Speaking、Voice notes、Dictation 的历史记录都支持卡片折叠、分页和关键词检索，避免长期使用后页面过长。
 - 音频文件保存在本地 `data/audio/`。
 - 跟读录音保存在本地 `data/recordings/`。
 - 口语题目和录音分别保存在本地 `data/speaking-history.json`、`data/speaking-recordings/`。

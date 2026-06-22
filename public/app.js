@@ -25,6 +25,7 @@ let filteredHistoryRecords = [];
 let historyPage = 1;
 let activeRecording = null;
 let openRecordingPanelId = null;
+const expandedHistoryRecords = new Set();
 
 const sampleSentences = [
   "Some people believe that public transport should be free in large cities.",
@@ -274,20 +275,30 @@ function renderHistory() {
   historyEl.innerHTML = records
     .map(
       (record) => {
-        const isRecordingPanelOpen = record.id === openRecordingPanelId;
+        const isExpanded = expandedHistoryRecords.has(record.id) || record.id === openRecordingPanelId;
+        const isRecordingPanelOpen = isExpanded && record.id === openRecordingPanelId;
+        const recordingCount = record.recordings?.length ?? 0;
         return `
-        <article class="history-card" data-id="${escapeHtml(record.id)}">
+        <article class="history-card ${isExpanded ? "is-expanded" : "is-collapsed"}" data-id="${escapeHtml(record.id)}">
           <div class="history-title-row">
             <div>
               <p class="eyebrow">${escapeHtml(formatDate(record.createdAt))}</p>
               <p class="history-text" data-original-text>${escapeHtml(record.text)}</p>
               <p class="history-text-placeholder" hidden>Original sentence hidden for rewrite practice.</p>
+              <div class="recording-compact-meta prompt-attempt-meta">
+                <span>${escapeHtml(record.items?.length ?? 0)} voice${record.items?.length === 1 ? "" : "s"}</span>
+                <span>${escapeHtml(recordingCount)} recording${recordingCount === 1 ? "" : "s"}</span>
+                ${record.errors?.length ? `<span>${escapeHtml(record.errors.length)} issue${record.errors.length === 1 ? "" : "s"}</span>` : ""}
+              </div>
             </div>
             <div class="history-card-actions">
-              <button type="button" class="ghost-button" data-practice="${escapeHtml(record.id)}">Rewrite</button>
-              <button type="button" class="ghost-button" data-record-panel="${escapeHtml(record.id)}">
-                ${isRecordingPanelOpen ? "Close" : "Record"}
-              </button>
+              <button type="button" class="ghost-button" data-toggle-history-record="${escapeHtml(record.id)}">${isExpanded ? "Compact" : "Expand"}</button>
+              ${isExpanded ? `<button type="button" class="ghost-button" data-practice="${escapeHtml(record.id)}">Rewrite</button>` : ""}
+              ${
+                isExpanded
+                  ? `<button type="button" class="ghost-button" data-record-panel="${escapeHtml(record.id)}">${isRecordingPanelOpen ? "Close" : "Record"}</button>`
+                  : ""
+              }
               <button type="button" class="danger-button" data-delete="${escapeHtml(record.id)}">Delete</button>
             </div>
           </div>
@@ -400,6 +411,21 @@ sampleButton.addEventListener("click", () => {
 });
 
 historyEl.addEventListener("click", async (event) => {
+  const toggleHistoryButton = event.target.closest("[data-toggle-history-record]");
+  if (toggleHistoryButton) {
+    const recordId = toggleHistoryButton.dataset.toggleHistoryRecord;
+    if (expandedHistoryRecords.has(recordId)) {
+      expandedHistoryRecords.delete(recordId);
+      if (openRecordingPanelId === recordId) {
+        openRecordingPanelId = null;
+      }
+    } else {
+      expandedHistoryRecords.add(recordId);
+    }
+    renderHistory();
+    return;
+  }
+
   const recordPanelButton = event.target.closest("[data-record-panel]");
   if (recordPanelButton) {
     const card = recordPanelButton.closest(".history-card");
@@ -408,6 +434,7 @@ historyEl.addEventListener("click", async (event) => {
     const status = card.querySelector(".record-status");
     panel.hidden = !panel.hidden;
     openRecordingPanelId = panel.hidden ? null : recordPanelButton.dataset.recordPanel;
+    expandedHistoryRecords.add(recordPanelButton.dataset.recordPanel);
     recordPanelButton.textContent = panel.hidden ? "Record" : "Close";
     if (!panel.hidden && !recordingSupported()) {
       startButton.disabled = true;
@@ -577,6 +604,7 @@ historyEl.addEventListener("click", async (event) => {
   if (openRecordingPanelId === button.dataset.delete) {
     openRecordingPanelId = null;
   }
+  expandedHistoryRecords.delete(button.dataset.delete);
   if (historyPage > 1 && filteredHistoryRecords.length % historyPageSize === 1) {
     historyPage -= 1;
   }

@@ -10,10 +10,20 @@ const statusEl = document.querySelector("#dictation-status");
 const currentEl = document.querySelector("#dictation-current");
 const listEl = document.querySelector("#dictation-list");
 const clearButton = document.querySelector("#clear-dictation");
+const searchInput = document.querySelector("#dictation-search");
+const resetButton = document.querySelector("#dictation-reset");
+const prevButton = document.querySelector("#dictation-prev");
+const nextButton = document.querySelector("#dictation-next");
+const pageStatus = document.querySelector("#dictation-page-status");
+const filterStatus = document.querySelector("#dictation-filter-status");
 
 let records = [];
+let filteredRecords = [];
 let activeRecord = null;
+let recordPage = 1;
 const revealedRecords = new Set();
+const expandedHistoryRecords = new Set();
+const historyPageSize = 4;
 
 const samples = [
   "The coastal environment is home to many rare species.",
@@ -49,6 +59,41 @@ function updateCounter() {
 
 function updateSpeedLabel() {
   speedValue.textContent = `${Number(speedInput.value).toFixed(2)}x`;
+}
+
+function dictationSearchText(record) {
+  return [
+    record.sourceText,
+    record.voice?.label,
+    record.voice?.shortLabel,
+    record.source,
+    ...(record.attempts ?? []).flatMap((attempt) => [
+      attempt.userText,
+      attempt.aiReview?.judgement,
+      attempt.aiReview?.practiceAdvice,
+      ...(attempt.mistakes ?? []).map((item) => [item.type, item.expected, item.actual].filter(Boolean).join(" ")),
+      ...(attempt.aiReview?.likelyListeningIssues ?? [])
+    ])
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function applyFilters({ resetPage = true } = {}) {
+  const query = searchInput.value.trim().toLowerCase();
+  filteredRecords = records.filter((record) => !query || dictationSearchText(record).includes(query));
+  if (resetPage) {
+    recordPage = 1;
+  }
+}
+
+function updatePager(totalPages) {
+  const hasRecords = filteredRecords.length > 0;
+  prevButton.disabled = !hasRecords || recordPage <= 1;
+  nextButton.disabled = !hasRecords || recordPage >= totalPages;
+  pageStatus.textContent = hasRecords ? `${recordPage} / ${totalPages}` : "";
+  filterStatus.textContent = records.length ? `${filteredRecords.length} of ${records.length} records` : "";
 }
 
 async function apiFetch(url, options) {
@@ -206,42 +251,52 @@ function renderMistakes(attempt, record) {
 function renderPracticeCard(record, { current = false } = {}) {
   const attempt = latestAttempt(record);
   const isRevealed = revealedRecords.has(record.id);
+  const isExpanded = current || expandedHistoryRecords.has(record.id);
   return `
-    <article class="history-card dictation-card" data-id="${escapeHtml(record.id)}">
+    <article class="history-card dictation-card ${isExpanded ? "is-expanded" : "is-collapsed"}" data-id="${escapeHtml(record.id)}">
       <div class="history-title-row">
         <div>
           <p class="eyebrow">${escapeHtml(formatDate(record.createdAt))}</p>
           <h3>${escapeHtml(record.voice?.shortLabel ?? record.voice?.label ?? "Dictation audio")}</h3>
           <p class="muted">Speed ${escapeHtml(record.speedRatio ?? "-")}x${record.source === "tts-history" ? " · reused from TTS comparison" : ""}</p>
+          <div class="recording-compact-meta prompt-attempt-meta">
+            <span>${escapeHtml(record.attempts?.length ?? 0)} attempt${record.attempts?.length === 1 ? "" : "s"}</span>
+            ${attempt ? `<span>Latest ${escapeHtml(attempt.score)}%</span>` : ""}
+          </div>
         </div>
         <div class="history-card-actions">
+          ${current ? "" : `<button type="button" class="ghost-button compact-button" data-toggle-dictation-card="${escapeHtml(record.id)}">${isExpanded ? "Compact" : "Expand"}</button>`}
           ${
             current
               ? ""
               : `<button type="button" class="ghost-button compact-button" data-practice-dictation="${escapeHtml(record.id)}">Practice</button>`
           }
-          <button type="button" class="ghost-button compact-button" data-reveal-dictation="${escapeHtml(record.id)}">
-            ${isRevealed ? "Hide answer" : "Reveal"}
-          </button>
+          ${isExpanded ? `<button type="button" class="ghost-button compact-button" data-reveal-dictation="${escapeHtml(record.id)}">${isRevealed ? "Hide answer" : "Reveal"}</button>` : ""}
           <button type="button" class="danger-button compact-button" data-delete-dictation="${escapeHtml(record.id)}">Delete</button>
         </div>
       </div>
-      <audio controls preload="metadata" src="${escapeHtml(record.audioUrl)}"></audio>
-      <form class="dictation-answer-form" data-check-dictation="${escapeHtml(record.id)}">
-        <label>
-          <span>Your dictation</span>
-          <textarea
-            class="dictation-answer"
-            rows="4"
-            maxlength="1000"
-            placeholder="Type what you hear. The original sentence stays hidden."
-            required
-          >${escapeHtml(attempt?.userText ?? "")}</textarea>
-        </label>
-        <button type="submit" class="primary-button compact-button">Check answer</button>
-      </form>
-      ${isRevealed ? `<p class="dictation-source">${escapeHtml(record.sourceText)}</p>` : ""}
-      ${attempt ? renderMistakes(attempt, record) : ""}
+      ${
+        isExpanded
+          ? `
+            <audio controls preload="metadata" src="${escapeHtml(record.audioUrl)}"></audio>
+            <form class="dictation-answer-form" data-check-dictation="${escapeHtml(record.id)}">
+              <label>
+                <span>Your dictation</span>
+                <textarea
+                  class="dictation-answer"
+                  rows="4"
+                  maxlength="1000"
+                  placeholder="Type what you hear. The original sentence stays hidden."
+                  required
+                >${escapeHtml(attempt?.userText ?? "")}</textarea>
+              </label>
+              <button type="submit" class="primary-button compact-button">Check answer</button>
+            </form>
+            ${isRevealed ? `<p class="dictation-source">${escapeHtml(record.sourceText)}</p>` : ""}
+            ${attempt ? renderMistakes(attempt, record) : ""}
+          `
+          : ""
+      }
     </article>
   `;
 }
@@ -258,18 +313,35 @@ function renderCurrent() {
 }
 
 function renderHistory() {
+  applyFilters({ resetPage: false });
+
   if (!records.length) {
     listEl.className = "history-list empty-state";
     listEl.textContent = "No dictation records yet.";
+    updatePager(1);
     return;
   }
 
+  if (!filteredRecords.length) {
+    listEl.className = "history-list empty-state";
+    listEl.textContent = "No dictation records match this search.";
+    updatePager(1);
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / historyPageSize));
+  recordPage = Math.min(recordPage, totalPages);
+  const startIndex = (recordPage - 1) * historyPageSize;
+  const pageRecords = filteredRecords.slice(startIndex, startIndex + historyPageSize);
+
   listEl.className = "history-list";
-  listEl.innerHTML = records.map((record) => renderPracticeCard(record)).join("");
+  listEl.innerHTML = pageRecords.map((record) => renderPracticeCard(record)).join("");
+  updatePager(totalPages);
 }
 
 async function loadRecords() {
   records = await apiFetch("/api/dictation");
+  applyFilters({ resetPage: false });
   const requestedRecordId = new URLSearchParams(window.location.search).get("record");
   if (requestedRecordId && !activeRecord) {
     activeRecord = records.find((record) => record.id === requestedRecordId) ?? null;
@@ -300,6 +372,7 @@ form.addEventListener("submit", async (event) => {
       })
     });
     activeRecord = record;
+    expandedHistoryRecords.add(record.id);
     await loadRecords();
     setStatus("Dictation audio is ready. Listen first, then type what you heard.");
   } catch (error) {
@@ -329,6 +402,7 @@ document.addEventListener("submit", async (event) => {
       body: JSON.stringify({ userText: answerInput.value })
     });
     activeRecord = payload.record;
+    expandedHistoryRecords.add(recordId);
     await loadRecords();
     setStatus(`Checked. Accuracy ${payload.attempt.score}%.`);
   } catch (error) {
@@ -348,9 +422,24 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const toggleCardButton = event.target.closest("[data-toggle-dictation-card]");
+  if (toggleCardButton) {
+    const recordId = toggleCardButton.dataset.toggleDictationCard;
+    if (expandedHistoryRecords.has(recordId)) {
+      expandedHistoryRecords.delete(recordId);
+    } else {
+      expandedHistoryRecords.add(recordId);
+    }
+    renderHistory();
+    return;
+  }
+
   const practiceButton = event.target.closest("[data-practice-dictation]");
   if (practiceButton) {
     activeRecord = records.find((record) => record.id === practiceButton.dataset.practiceDictation);
+    if (activeRecord) {
+      expandedHistoryRecords.add(activeRecord.id);
+    }
     renderCurrent();
     setStatus("Loaded this record into the current exercise.");
     return;
@@ -379,6 +468,7 @@ document.addEventListener("click", async (event) => {
         { method: "POST" }
       );
       activeRecord = payload.record;
+      expandedHistoryRecords.add(reviewButton.dataset.reviewDictation);
       await loadRecords();
       setStatus(`AI review ready. DeepSeek score ${payload.aiReview.aiScore ?? "-"}%.`);
     } catch (error) {
@@ -396,6 +486,10 @@ document.addEventListener("click", async (event) => {
       activeRecord = null;
     }
     revealedRecords.delete(deleteButton.dataset.deleteDictation);
+    expandedHistoryRecords.delete(deleteButton.dataset.deleteDictation);
+    if (recordPage > 1 && filteredRecords.length % historyPageSize === 1) {
+      recordPage -= 1;
+    }
     await loadRecords();
     setStatus("Deleted one dictation record.");
     return;
@@ -405,9 +499,33 @@ document.addEventListener("click", async (event) => {
 clearButton.addEventListener("click", async () => {
   await apiFetch("/api/dictation", { method: "DELETE" });
   activeRecord = null;
+  recordPage = 1;
   revealedRecords.clear();
+  expandedHistoryRecords.clear();
   await loadRecords();
   setStatus("Dictation history cleared.");
+});
+
+searchInput.addEventListener("input", () => {
+  applyFilters();
+  renderHistory();
+});
+
+resetButton.addEventListener("click", () => {
+  searchInput.value = "";
+  applyFilters();
+  renderHistory();
+});
+
+prevButton.addEventListener("click", () => {
+  recordPage = Math.max(1, recordPage - 1);
+  renderHistory();
+});
+
+nextButton.addEventListener("click", () => {
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / historyPageSize));
+  recordPage = Math.min(totalPages, recordPage + 1);
+  renderHistory();
 });
 
 sourceTextInput.addEventListener("input", updateCounter);

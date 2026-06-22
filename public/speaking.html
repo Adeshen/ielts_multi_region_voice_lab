@@ -58,9 +58,20 @@
             <h2>Speaking prompts</h2>
           </div>
           <div class="history-actions">
+            <span id="speaking-page-status" class="page-status"></span>
+            <button type="button" id="speaking-prev" class="ghost-button">Prev</button>
+            <button type="button" id="speaking-next" class="ghost-button">Next</button>
             <button type="button" id="clear-speaking" class="ghost-button">Clear</button>
           </div>
         </div>
+        <div class="history-filters compact-history-filters" aria-label="Speaking history filters">
+          <label class="filter-field" for="speaking-search">
+            <span>Search</span>
+            <input id="speaking-search" type="search" placeholder="Prompt, transcript, vocabulary" />
+          </label>
+          <button type="button" id="speaking-reset" class="ghost-button">Reset</button>
+        </div>
+        <div id="speaking-filter-status" class="filter-status"></div>
         <div id="speaking-status" class="status"></div>
         <div id="speaking-list" class="history-list empty-state">No speaking prompts yet.</div>
       </section>
