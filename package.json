@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "migrate:wav-to-mp3": "node scripts/migrate-wav-recordings-to-mp3.js"
   },
   "engines": {
     "node": ">=24"

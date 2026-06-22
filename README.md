@@ -52,6 +52,16 @@ cp .env.example .env
 npm start
 ```
 
+口语录音会在服务端用 ffmpeg 把浏览器生成的 WAV 转成 MP3。部署前请先安装 ffmpeg：
+
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu / Debian
+sudo apt-get install ffmpeg
+```
+
 启动后打开：
 
 ```text
@@ -72,6 +82,14 @@ http://127.0.0.1:3000
 npm run dev
 ```
 
+如果服务器上已经有旧的 WAV 录音记录，可以在安装 ffmpeg 后执行一次迁移：
+
+```bash
+npm run migrate:wav-to-mp3
+```
+
+该命令会把 `data/speaking-recordings/` 下历史 WAV 录音转成 MP3，上传到 TOS（如已配置），并更新 `data/speaking-history.json`、`data/voice-notes-history.json`。旧 WAV 会保留作备份。
+
 ## 环境变量
 
 在 `.env` 中配置火山引擎访问凭证：
@@ -88,6 +106,7 @@ VOLCENGINE_ASR_QUERY_ENDPOINT=https://openspeech.bytedance.com/api/v3/auc/bigmod
 VOLCENGINE_ASR_RESOURCE_ID=volc.seedasr.auc
 VOLCENGINE_ASR_MODEL_NAME=bigmodel
 VOLCENGINE_ASR_AUDIO_BASE_URL=https://your-public-tunnel.example.com
+FFMPEG_PATH=ffmpeg
 TOS_BUCKET=audio-text
 TOS_REGION=cn-guangzhou
 TOS_ENDPOINT=tos-cn-guangzhou.volces.com
@@ -113,6 +132,7 @@ PORT=3000
 - `VOLCENGINE_ASR_RESOURCE_ID=volc.seedasr.auc`：豆包录音文件识别 2.0 资源 ID。
 - `VOLCENGINE_ASR_MODEL_NAME=bigmodel`：录音文件识别模型名。
 - `VOLCENGINE_ASR_AUDIO_BASE_URL`：火山 ASR 需要能公网访问录音文件。例如用 ngrok/cloudflared 暴露本地 `http://127.0.0.1:3000` 后，把公网 HTTPS 地址填在这里。
+- `FFMPEG_PATH=ffmpeg`：ffmpeg 可执行文件路径。浏览器录音先生成 WAV，服务端再用 ffmpeg 转成 MP3，便于对象存储、网页播放和豆包录音文件识别复用同一份音频。
 - `TOS_BUCKET`：火山引擎 TOS 桶名，本项目当前示例为 `audio-text`。
 - `TOS_REGION`：TOS 所在地域，例如 `cn-guangzhou`。
 - `TOS_ENDPOINT`：TOS endpoint，例如 `tos-cn-guangzhou.volces.com`。
@@ -166,6 +186,9 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 - **浏览器麦克风录音**
   前端支持录制学习者朗读，TTS 跟读录音保存到 `data/recordings/`，口语模式录音保存到 `data/speaking-recordings/`，网页可直接播放，便于和 TTS 音频对比。
 
+- **ffmpeg 录音转码**
+  浏览器不能稳定直接录制 MP3，因此 Speaking 和 Voice notes 页面先用 Web Audio API 编码 WAV，再由 Express 调用 ffmpeg 转成 MP3。保存到本地或 TOS 的新录音统一为 `audio/mpeg`，火山 ASR 提交时也使用同一份 MP3 URL。
+
 - **口语录音模式**
   新增 `/speaking.html`，可手动输入题目或文段，保存为练习卡片，再在同一个题目下反复录制多个 answer attempts。录音默认限制为 2 分钟，适合 IELTS Part 2，也可以切换为 30 秒、1 分钟或 3 分钟；所有录音都会限制在 3 分钟以内。每条录音都可以单独播放、转写、分析和删除。该模式不调用火山 TTS。
 
@@ -185,7 +208,7 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
   口语录音页面可点击 Transcribe，后端把录音文件的公网 URL 提交到火山语音录音文件识别接口，再轮询查询文字稿并自动填入分析输入框。ASR 复用 `VOLCENGINE_APP_ID` 和 `VOLCENGINE_ACCESS_TOKEN`，不需要把火山凭证暴露到前端。根据官方录音文件识别文档，音频字段使用 `url`，因此纯 `127.0.0.1` 本地地址不能被火山服务器访问。转写成功后会保存 ASR utterance segments、起止时间、最长停顿、估算语速等 timing evidence。转写速度受公网隧道、WAV 文件大小和火山任务排队影响；默认最多轮询约 60 秒，单次火山请求默认 20 秒网络超时。
 
 - **浏览器端 WAV 录音**
-  口语模式使用 Web Audio API 在浏览器端编码 WAV，避免默认 WebM 录音格式不被火山 ASR 支持。
+  口语模式和纯口语记录使用 Web Audio API 在浏览器端编码 WAV，避免默认 WebM 录音格式不被火山 ASR 支持；服务端随后转成 MP3 保存。
 
 - **本地历史记录**
   TTS 记录写入 `data/history.json`，口语录音题目写入 `data/speaking-history.json`，听写训练写入 `data/dictation-history.json`，分别记录文本、生成时间、音频路径、听写尝试和失败信息。

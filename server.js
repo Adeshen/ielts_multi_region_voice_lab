@@ -28,6 +28,7 @@ import {
 import { transcribeAudioFile } from "./src/volcengineAsr.js";
 import { analyzeSpeakingAnswer, improveVoiceNoteExpression, reviewDictationAttempt } from "./src/deepseek.js";
 import { compareDictation } from "./src/dictation.js";
+import { convertWavToMp3 } from "./src/audioTranscode.js";
 import { listVoices, resolveVoiceIds } from "./src/voices.js";
 import { synthesizeSpeech, validateCredentials } from "./src/volcengine.js";
 import {
@@ -314,6 +315,35 @@ function parseRecordingUpload(dataUrl) {
   return { buffer, extension, mimeType };
 }
 
+async function optimizeRecordingUpload(parsed) {
+  if (parsed.mimeType !== "audio/wav") {
+    return parsed;
+  }
+
+  let buffer;
+  try {
+    buffer = await convertWavToMp3(parsed.buffer);
+  } catch (error) {
+    if (error.code === "FFMPEG_NOT_FOUND") {
+      error.statusCode = 500;
+      error.message = "ffmpeg is not installed on this server. Install ffmpeg or set FFMPEG_PATH before saving WAV recordings as MP3.";
+      throw error;
+    }
+    const transcodeError = new Error(`Could not convert the WAV recording to MP3. ${error.message}`);
+    transcodeError.statusCode = 400;
+    throw transcodeError;
+  }
+
+  return {
+    buffer,
+    extension: "mp3",
+    mimeType: "audio/mpeg",
+    originalExtension: parsed.extension,
+    originalMimeType: parsed.mimeType,
+    optimizedFrom: "wav"
+  };
+}
+
 function speakingTitleFromPrompt(prompt) {
   const firstLine = prompt.split(/\r?\n/).find((line) => line.trim())?.trim() || "Speaking prompt";
   return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
@@ -425,10 +455,11 @@ app.post("/api/history/:id/recordings", async (request, response, next) => {
       return response.status(404).json({ error: "History record not found." });
     }
 
-    const parsed = parseRecordingUpload(request.body?.dataUrl);
-    if (parsed.error) {
-      return response.status(400).json({ error: parsed.error });
+    const uploaded = parseRecordingUpload(request.body?.dataUrl);
+    if (uploaded.error) {
+      return response.status(400).json({ error: uploaded.error });
     }
+    const parsed = await optimizeRecordingUpload(uploaded);
 
     const recordingId = crypto.randomUUID();
     const filename = `${record.id}-${recordingId}.${parsed.extension}`;
@@ -445,6 +476,8 @@ app.post("/api/history/:id/recordings", async (request, response, next) => {
       filename,
       audioUrl: publicAudioUrl("recordings", filename),
       mimeType: parsed.mimeType,
+      originalMimeType: parsed.originalMimeType,
+      optimizedFrom: parsed.optimizedFrom,
       createdAt: new Date().toISOString()
     };
 
@@ -731,10 +764,11 @@ app.get("/api/voice-notes", async (_request, response, next) => {
 
 app.post("/api/voice-notes", async (request, response, next) => {
   try {
-    const parsed = parseRecordingUpload(request.body?.dataUrl);
-    if (parsed.error) {
-      return response.status(400).json({ error: parsed.error });
+    const uploaded = parseRecordingUpload(request.body?.dataUrl);
+    if (uploaded.error) {
+      return response.status(400).json({ error: uploaded.error });
     }
+    const parsed = await optimizeRecordingUpload(uploaded);
 
     const recordId = crypto.randomUUID();
     const filename = `voice-note-${recordId}.${parsed.extension}`;
@@ -752,6 +786,8 @@ app.post("/api/voice-notes", async (request, response, next) => {
       filename,
       audioUrl: publicAudioUrl("speaking-recordings", filename),
       mimeType: parsed.mimeType,
+      originalMimeType: parsed.originalMimeType,
+      optimizedFrom: parsed.optimizedFrom,
       createdAt: new Date().toISOString()
     };
 
@@ -912,10 +948,11 @@ app.post("/api/speaking/:id/recordings", async (request, response, next) => {
       return response.status(404).json({ error: "Speaking prompt not found." });
     }
 
-    const parsed = parseRecordingUpload(request.body?.dataUrl);
-    if (parsed.error) {
-      return response.status(400).json({ error: parsed.error });
+    const uploaded = parseRecordingUpload(request.body?.dataUrl);
+    if (uploaded.error) {
+      return response.status(400).json({ error: uploaded.error });
     }
+    const parsed = await optimizeRecordingUpload(uploaded);
 
     const recordingId = crypto.randomUUID();
     const filename = `${record.id}-${recordingId}.${parsed.extension}`;
@@ -932,6 +969,8 @@ app.post("/api/speaking/:id/recordings", async (request, response, next) => {
       filename,
       audioUrl: publicAudioUrl("speaking-recordings", filename),
       mimeType: parsed.mimeType,
+      originalMimeType: parsed.originalMimeType,
+      optimizedFrom: parsed.optimizedFrom,
       createdAt: new Date().toISOString()
     };
 
@@ -995,7 +1034,7 @@ app.post("/api/speaking/:id/recordings/:recordingId/transcribe", async (request,
     }
     if (!/\.(wav|mp3|ogg|raw)$/i.test(recording.filename)) {
       return response.status(400).json({
-        error: "This recording format is not supported by Volcengine ASR. Please create a new recording; new speaking recordings are saved as WAV."
+        error: "This recording format is not supported by Volcengine ASR. Please create a new recording; new speaking recordings are saved as MP3."
       });
     }
 
@@ -1094,7 +1133,7 @@ app.delete("/api/speaking", async (_request, response, next) => {
 
 app.use((error, _request, response, _next) => {
   console.error(error);
-  const status = error.message?.startsWith("Missing environment variable") ? 500 : 500;
+  const status = Number.isInteger(error.statusCode) ? error.statusCode : 500;
   response.status(status).json({ error: error.message || "Unexpected server error." });
 });
 
