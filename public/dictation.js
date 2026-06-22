@@ -339,6 +339,47 @@ function renderHistory() {
   updatePager(totalPages);
 }
 
+function isEditableTarget(target) {
+  const element = target instanceof Element ? target : null;
+  if (!element) {
+    return false;
+  }
+  return Boolean(element.closest("textarea, input, select, [contenteditable='true']"));
+}
+
+function preferredDictationAudio() {
+  const audioElements = [...document.querySelectorAll(".dictation-card audio")];
+  const playingAudio = audioElements.find((audio) => !audio.paused && !audio.ended);
+  if (playingAudio) {
+    return playingAudio;
+  }
+  return currentEl.querySelector("audio") || audioElements.find((audio) => audio.closest(".dictation-card.is-expanded")) || null;
+}
+
+async function toggleDictationAudio() {
+  const audio = preferredDictationAudio();
+  if (!audio) {
+    setStatus("No dictation audio is ready yet.", "error");
+    return;
+  }
+
+  if (audio.paused || audio.ended) {
+    if (audio.ended) {
+      audio.currentTime = 0;
+    }
+    try {
+      await audio.play();
+      setStatus("Playing dictation audio.");
+    } catch (error) {
+      setStatus(error.message || "Could not play this audio.", "error");
+    }
+    return;
+  }
+
+  audio.pause();
+  setStatus("Paused dictation audio.");
+}
+
 async function loadRecords() {
   records = await apiFetch("/api/dictation");
   applyFilters({ resetPage: false });
@@ -346,7 +387,7 @@ async function loadRecords() {
   if (requestedRecordId && !activeRecord) {
     activeRecord = records.find((record) => record.id === requestedRecordId) ?? null;
     if (activeRecord) {
-      setStatus("Loaded reused audio from TTS comparison. Listen first, then type what you heard.");
+      setStatus("Loaded reused audio from TTS comparison. Listen first, then type what you heard. Press Esc to pause or resume.");
     }
   }
   if (activeRecord) {
@@ -374,7 +415,7 @@ form.addEventListener("submit", async (event) => {
     activeRecord = record;
     expandedHistoryRecords.add(record.id);
     await loadRecords();
-    setStatus("Dictation audio is ready. Listen first, then type what you heard.");
+    setStatus("Dictation audio is ready. Listen first, then type what you heard. Press Esc to pause or resume.");
   } catch (error) {
     setStatus(error.message, "error");
   } finally {
@@ -441,7 +482,7 @@ document.addEventListener("click", async (event) => {
       expandedHistoryRecords.add(activeRecord.id);
     }
     renderCurrent();
-    setStatus("Loaded this record into the current exercise.");
+    setStatus("Loaded this record into the current exercise. Press Esc to pause or resume.");
     return;
   }
 
@@ -526,6 +567,24 @@ nextButton.addEventListener("click", () => {
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / historyPageSize));
   recordPage = Math.min(totalPages, recordPage + 1);
   renderHistory();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.repeat) {
+    return;
+  }
+
+  const isSpace = event.code === "Space" || event.key === " ";
+  const isTextEditing = isEditableTarget(event.target);
+  const shouldToggle =
+    event.key === "Escape" || ((event.ctrlKey || event.metaKey) && isSpace) || (!isTextEditing && isSpace);
+
+  if (!shouldToggle) {
+    return;
+  }
+
+  event.preventDefault();
+  toggleDictationAudio();
 });
 
 sourceTextInput.addEventListener("input", updateCounter);
