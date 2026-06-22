@@ -88,9 +88,9 @@ VOLCENGINE_ASR_QUERY_ENDPOINT=https://openspeech.bytedance.com/api/v3/auc/bigmod
 VOLCENGINE_ASR_RESOURCE_ID=volc.seedasr.auc
 VOLCENGINE_ASR_MODEL_NAME=bigmodel
 VOLCENGINE_ASR_AUDIO_BASE_URL=https://your-public-tunnel.example.com
-TOS_BUCKET=english-audio-019eead1a8f778e4b0edbcb18a2b1b0f-tosalias
-TOS_REGION=cn-beijing
-TOS_ENDPOINT=tos-cn-beijing.volces.com
+TOS_BUCKET=audio-text
+TOS_REGION=cn-guangzhou
+TOS_ENDPOINT=tos-cn-guangzhou.volces.com
 TOS_ACCESS_KEY_ID=your_tos_access_key_id_here
 TOS_ACCESS_KEY_SECRET=your_tos_access_key_secret_here
 TOS_PREFIX=ielts-voice-lab
@@ -113,9 +113,9 @@ PORT=3000
 - `VOLCENGINE_ASR_RESOURCE_ID=volc.seedasr.auc`：豆包录音文件识别 2.0 资源 ID。
 - `VOLCENGINE_ASR_MODEL_NAME=bigmodel`：录音文件识别模型名。
 - `VOLCENGINE_ASR_AUDIO_BASE_URL`：火山 ASR 需要能公网访问录音文件。例如用 ngrok/cloudflared 暴露本地 `http://127.0.0.1:3000` 后，把公网 HTTPS 地址填在这里。
-- `TOS_BUCKET`：火山引擎 TOS 桶名，本项目默认示例为 `english-audio-019eead1a8f778e4b0edbcb18a2b1b0f-tosalias`。
-- `TOS_REGION`：TOS 所在地域，例如 `cn-beijing`。
-- `TOS_ENDPOINT`：TOS endpoint，例如 `tos-cn-beijing.volces.com`。
+- `TOS_BUCKET`：火山引擎 TOS 桶名，本项目当前示例为 `audio-text`。
+- `TOS_REGION`：TOS 所在地域，例如 `cn-guangzhou`。
+- `TOS_ENDPOINT`：TOS endpoint，例如 `tos-cn-guangzhou.volces.com`。
 - `TOS_ACCESS_KEY_ID` / `TOS_ACCESS_KEY_SECRET`：火山账号访问密钥。注意这不是语音 App ID、Access Token 或 Secret Key。
 - `TOS_PREFIX`：写入桶内的对象前缀，默认 `ielts-voice-lab`。
 - `SITE_PASSWORD`：站点访问密码。配置后，网页、API、音频文件都会要求先登录。
@@ -499,7 +499,7 @@ data/audio/
 配置 TOS 后，新音频对象写入桶：
 
 ```text
-english-audio-019eead1a8f778e4b0edbcb18a2b1b0f-tosalias/ielts-voice-lab/
+audio-text/ielts-voice-lab/
 ```
 
 历史记录在：
