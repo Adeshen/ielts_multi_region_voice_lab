@@ -387,7 +387,7 @@ async function loadRecords() {
   if (requestedRecordId && !activeRecord) {
     activeRecord = records.find((record) => record.id === requestedRecordId) ?? null;
     if (activeRecord) {
-      setStatus("Loaded reused audio from TTS comparison. Listen first, then type what you heard. Press Esc to pause or resume.");
+      setStatus("Loaded reused audio from TTS comparison. Listen first, then type what you heard. Press Shift + Space to pause or resume.");
     }
   }
   if (activeRecord) {
@@ -415,7 +415,7 @@ form.addEventListener("submit", async (event) => {
     activeRecord = record;
     expandedHistoryRecords.add(record.id);
     await loadRecords();
-    setStatus("Dictation audio is ready. Listen first, then type what you heard. Press Esc to pause or resume.");
+    setStatus("Dictation audio is ready. Listen first, then type what you heard. Press Shift + Space to pause or resume.");
   } catch (error) {
     setStatus(error.message, "error");
   } finally {
@@ -482,7 +482,7 @@ document.addEventListener("click", async (event) => {
       expandedHistoryRecords.add(activeRecord.id);
     }
     renderCurrent();
-    setStatus("Loaded this record into the current exercise. Press Esc to pause or resume.");
+    setStatus("Loaded this record into the current exercise. Press Shift + Space to pause or resume.");
     return;
   }
 
@@ -576,8 +576,7 @@ document.addEventListener("keydown", (event) => {
 
   const isSpace = event.code === "Space" || event.key === " ";
   const isTextEditing = isEditableTarget(event.target);
-  const shouldToggle =
-    event.key === "Escape" || ((event.ctrlKey || event.metaKey) && isSpace) || (!isTextEditing && isSpace);
+  const shouldToggle = event.key === "Escape" || (event.shiftKey && isSpace) || (!isTextEditing && isSpace);
 
   if (!shouldToggle) {
     return;
