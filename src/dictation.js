@@ -39,7 +39,7 @@ const functionWords = new Set([
   "those"
 ]);
 
-function normalizeText(value) {
+export function normalizeText(value) {
   return String(value ?? "")
     .toLowerCase()
     .replace(/[’']/g, "")
@@ -140,7 +140,7 @@ function alignWords(expectedWords, actualWords) {
   return operations;
 }
 
-function phraseInText(phrase, normalizedText) {
+export function phraseInText(phrase, normalizedText) {
   const normalizedPhrase = normalizeText(phrase);
   if (!normalizedPhrase) {
     return false;

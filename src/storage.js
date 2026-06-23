@@ -10,6 +10,7 @@ export const historyPath = path.join(dataDir, "history.json");
 export const speakingHistoryPath = path.join(dataDir, "speaking-history.json");
 export const dictationHistoryPath = path.join(dataDir, "dictation-history.json");
 export const voiceNoteHistoryPath = path.join(dataDir, "voice-notes-history.json");
+export const vocabularyHistoryPath = path.join(dataDir, "vocabulary-history.json");
 
 export async function ensureStorage() {
   await fs.mkdir(audioDir, { recursive: true });
@@ -19,6 +20,7 @@ export async function ensureStorage() {
   await ensureJsonArrayFile(speakingHistoryPath);
   await ensureJsonArrayFile(dictationHistoryPath);
   await ensureJsonArrayFile(voiceNoteHistoryPath);
+  await ensureJsonArrayFile(vocabularyHistoryPath);
 }
 
 async function ensureJsonArrayFile(filePath) {
@@ -79,6 +81,14 @@ export async function writeVoiceNoteRecords(records) {
   await writeJsonArray(voiceNoteHistoryPath, records);
 }
 
+export async function readVocabularyRecords() {
+  return readJsonArray(vocabularyHistoryPath);
+}
+
+export async function writeVocabularyRecords(records) {
+  await writeJsonArray(vocabularyHistoryPath, records);
+}
+
 export async function addHistoryRecord(record) {
   const history = await readHistory();
   history.unshift(record);
@@ -101,6 +111,12 @@ export async function addVoiceNoteRecord(record) {
   const records = await readVoiceNoteRecords();
   records.unshift(record);
   await writeVoiceNoteRecords(records.slice(0, 100));
+}
+
+export async function addVocabularyRecord(record) {
+  const records = await readVocabularyRecords();
+  records.unshift(record);
+  await writeVocabularyRecords(records.slice(0, 500));
 }
 
 export async function removeAudioFiles(record) {

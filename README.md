@@ -7,6 +7,7 @@
 - 一句话生成多种英语音色，适合对比美式、英式、澳洲等发音差异。
 - 支持网页内播放 MP3 音频。
 - 支持 Dictation 听写模式：可生成新听写音频，也可直接复用 Audio comparison 历史音频；输入答案后自动评分和标出错词，并可选用 DeepSeek 做更灵活的 AI 复核。
+- 支持 Vocabulary Dictation 单词句子听写：从 `data/vocabulary.txt` 读取主题词表，用主题音频预热，再用例句生成单句听写，记录目标词命中率、错因和复习日期。
 - 支持在历史记录里直接录制自己的朗读，并和生成音频对比播放。
 - 支持单独的口语录音页面，可以自己输入 IELTS 题目/文段，并在同一个题目下保存多次回答录音。
 - 支持纯口语记录页面，可以自由录音、ASR 转写，并用 DeepSeek 生成更自然的口语表达和高级词汇建议。
@@ -16,12 +17,13 @@
 - 口语分析结果支持折叠/展开，长范文不会把后续录音卡片挤得太远。
 - 支持站点密码保护，避免公开部署后被他人消耗 TTS/ASR/LLM 额度。
 - 支持历史记录展示、单条删除、清空历史。
-- TTS、Speaking、Voice notes、Dictation 的历史记录都支持卡片折叠、分页和关键词检索，避免长期使用后页面过长。
+- TTS、Speaking、Voice notes、Dictation、Vocabulary 的历史记录都支持卡片折叠、分页和关键词检索，避免长期使用后页面过长。
 - 音频文件保存在本地 `data/audio/`。
 - 跟读录音保存在本地 `data/recordings/`。
 - 口语题目和录音分别保存在本地 `data/speaking-history.json`、`data/speaking-recordings/`。
 - 纯口语记录保存在本地 `data/voice-notes-history.json`，录音文件复用 `data/speaking-recordings/`。
 - 听写记录保存在本地 `data/dictation-history.json`，听写音频复用 `data/audio/`。
+- 单词听写记录保存在本地 `data/vocabulary-history.json`，词表保存在 `data/vocabulary.txt`，音频复用 `data/audio/`。
 - 历史元数据保存在本地 `data/history.json`。
 - 支持配置火山引擎 TOS 对象存储；配置后新生成的 TTS、听写音频和录音文件会写入 TOS 桶，旧本地音频仍可回退播放。
 - 火山引擎凭证只放在 `.env`，不会暴露给前端页面。
@@ -74,6 +76,7 @@ http://127.0.0.1:3000
 - 口语录音模式：`http://127.0.0.1:3000/speaking.html`
 - 纯口语记录：`http://127.0.0.1:3000/voice-notes.html`
 - Dictation 听写模式：`http://127.0.0.1:3000/dictation.html`
+- Vocabulary 单词听写：`http://127.0.0.1:3000/vocabulary.html`
 - 本地音频访问示例：`http://127.0.0.1:3000/audio/{filename}.mp3`
 
 开发模式可使用：
@@ -107,6 +110,7 @@ VOLCENGINE_ASR_RESOURCE_ID=volc.seedasr.auc
 VOLCENGINE_ASR_MODEL_NAME=bigmodel
 VOLCENGINE_ASR_AUDIO_BASE_URL=https://your-public-tunnel.example.com
 FFMPEG_PATH=ffmpeg
+VOCABULARY_FILE=data/vocabulary.txt
 TOS_BUCKET=audio-text
 TOS_REGION=cn-guangzhou
 TOS_ENDPOINT=tos-cn-guangzhou.volces.com
@@ -133,6 +137,7 @@ PORT=3000
 - `VOLCENGINE_ASR_MODEL_NAME=bigmodel`：录音文件识别模型名。
 - `VOLCENGINE_ASR_AUDIO_BASE_URL`：火山 ASR 需要能公网访问录音文件。例如用 ngrok/cloudflared 暴露本地 `http://127.0.0.1:3000` 后，把公网 HTTPS 地址填在这里。
 - `FFMPEG_PATH=ffmpeg`：ffmpeg 可执行文件路径。浏览器录音先生成 WAV，服务端再用 ffmpeg 转成 MP3，便于对象存储、网页播放和豆包录音文件识别复用同一份音频。
+- `VOCABULARY_FILE=data/vocabulary.txt`：Vocabulary Dictation 使用的主题词表路径。
 - `TOS_BUCKET`：火山引擎 TOS 桶名，本项目当前示例为 `audio-text`。
 - `TOS_REGION`：TOS 所在地域，例如 `cn-guangzhou`。
 - `TOS_ENDPOINT`：TOS endpoint，例如 `tos-cn-guangzhou.volces.com`。
@@ -183,6 +188,9 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 - **DeepSeek 听写复核**
   Dictation 的基础评分使用本地程序，速度快且不消耗 LLM。每次听写尝试也可以点击 AI review，由 DeepSeek 复核原句和学习者答案，更灵活地区分可接受拼写/词形变化、真正影响理解的错误、可能的弱读/连读/尾音问题，并给出下一步训练建议。
 
+- **Vocabulary Dictation 单词句子听写**
+  新增 `/vocabulary.html`。后端解析 `data/vocabulary.txt`，按主题生成新词、复习和错题队列。主题面板播放 GitHub 公开词汇主题 MP3，真正计分的训练单元使用词表例句生成 TTS 单句听写。提交答案后会记录目标词是否听出、拼写/功能词/相近词等错因、连续高分次数和下一次复习时间。
+
 - **浏览器麦克风录音**
   前端支持录制学习者朗读，TTS 跟读录音保存到 `data/recordings/`，口语模式录音保存到 `data/speaking-recordings/`，网页可直接播放，便于和 TTS 音频对比。
 
@@ -211,7 +219,7 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
   口语模式和纯口语记录使用 Web Audio API 在浏览器端编码 WAV，避免默认 WebM 录音格式不被火山 ASR 支持；服务端随后转成 MP3 保存。
 
 - **本地历史记录**
-  TTS 记录写入 `data/history.json`，口语录音题目写入 `data/speaking-history.json`，听写训练写入 `data/dictation-history.json`，分别记录文本、生成时间、音频路径、听写尝试和失败信息。
+  TTS 记录写入 `data/history.json`，口语录音题目写入 `data/speaking-history.json`，听写训练写入 `data/dictation-history.json`，单词句子听写写入 `data/vocabulary-history.json`，分别记录文本、生成时间、音频路径、听写尝试和失败信息。
 
 - **部分失败容错**
   多个音色逐个生成。如果某个音色失败，其他成功音色仍会保存并返回，页面会显示失败原因。
@@ -228,6 +236,7 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 - 火山引擎 V3 TTS 文档：<https://www.volcengine.com/docs/6561/1598757>
 - 豆包 Seed ASR 模型页：<https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seed-asr-2-0>
 - 豆包录音文件识别文档：<https://www.volcengine.com/docs/6561/1354868?lang=zh>
+- IELTS vocabulary audio source：<https://github.com/hefengxian/my-ielts/tree/master/public/vocabulary/audio>
 
 ## 项目结构
 
@@ -238,13 +247,16 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 │   ├── speaking.html   # 口语录音模式页面
 │   ├── voice-notes.html # 纯口语记录页面
 │   ├── dictation.html  # Dictation 听写训练页面
+│   ├── vocabulary.html # 单词句子听写页面
 │   ├── styles.css      # 页面样式
 │   ├── app.js          # TTS 页面交互逻辑
 │   ├── speaking.js     # 口语录音页面交互逻辑
 │   ├── voice-notes.js  # 纯口语记录页面交互逻辑
-│   └── dictation.js    # 听写训练页面交互逻辑
+│   ├── dictation.js    # 听写训练页面交互逻辑
+│   └── vocabulary.js   # 单词句子听写页面交互逻辑
 ├── src/
 │   ├── dictation.js    # 听写词级 diff 和错词统计
+│   ├── vocabulary.js   # 词表解析、队列和复习调度
 │   ├── audioStore.js   # 本地/TOS 音频对象存储
 │   ├── storage.js      # 本地音频和历史记录读写
 │   ├── volcengineAsr.js # 火山语音 ASR 录音文件识别
@@ -259,7 +271,9 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 │   ├── history.json    # TTS 历史记录
 │   ├── speaking-history.json # 口语题目记录
 │   ├── voice-notes-history.json # 纯口语记录
-│   └── dictation-history.json # 听写训练记录
+│   ├── dictation-history.json # 听写训练记录
+│   ├── vocabulary-history.json # 单词句子听写记录
+│   └── vocabulary.txt  # IELTS 主题词表和例句
 ├── media/
 │   └── example_multi_region.mp4  # 案例演示视频
 ├── server.js           # Express 服务入口
@@ -398,6 +412,51 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 ### `DELETE /api/dictation`
 
 清空全部听写记录，并删除对应 MP3 文件。
+
+### `GET /api/vocabulary/topics`
+
+返回词表主题、主题音频 URL、词条例句数量，以及已练习、待复习和错题数量。
+
+### `GET /api/vocabulary/queue`
+
+按主题和模式返回单词听写队列。`mode` 可取 `new`、`review` 或 `mistakes`。
+
+查询示例：
+
+```text
+/api/vocabulary/queue?topicId=t1&mode=new&limit=15
+```
+
+### `POST /api/vocabulary/dictation`
+
+为某个词条的例句生成或复用一条单词听写记录。
+
+请求示例：
+
+```json
+{
+  "entryId": "t1-e1",
+  "voiceId": "uk_female",
+  "speedRatio": 0.9,
+  "volumeRatio": 1
+}
+```
+
+### `POST /api/vocabulary/dictation/:id/check`
+
+提交单词句子听写答案，返回词级 diff、目标词命中、错因标签、连续正确次数和下一次复习时间。
+
+### `GET /api/vocabulary/history`
+
+返回单词句子听写历史记录。
+
+### `DELETE /api/vocabulary/dictation/:id`
+
+删除一条单词句子听写记录，并删除对应 MP3 文件。
+
+### `DELETE /api/vocabulary/history`
+
+清空全部单词句子听写记录，并删除对应 MP3 文件。
 
 ### `GET /api/speaking`
 

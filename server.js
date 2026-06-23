@@ -8,11 +8,13 @@ import {
   addSpeakingRecord,
   addDictationRecord,
   addVoiceNoteRecord,
+  addVocabularyRecord,
   audioDir,
   ensureStorage,
   readDictationRecords,
   readHistory,
   readSpeakingRecords,
+  readVocabularyRecords,
   readVoiceNoteRecords,
   recordingDir,
   removeAudioFiles,
@@ -23,12 +25,21 @@ import {
   writeDictationRecords,
   writeHistory,
   writeSpeakingRecords,
+  writeVocabularyRecords,
   writeVoiceNoteRecords
 } from "./src/storage.js";
 import { transcribeAudioFile } from "./src/volcengineAsr.js";
 import { analyzeSpeakingAnswer, improveVoiceNoteExpression, reviewDictationAttempt } from "./src/deepseek.js";
 import { compareDictation } from "./src/dictation.js";
 import { convertWavToMp3 } from "./src/audioTranscode.js";
+import {
+  buildVocabularyQueue,
+  evaluateVocabularyAttempt,
+  findVocabularyEntry,
+  loadVocabularyBank,
+  publicVocabularyEntry,
+  summarizeVocabularyProgress
+} from "./src/vocabulary.js";
 import { listVoices, resolveVoiceIds } from "./src/voices.js";
 import { synthesizeSpeech, validateCredentials } from "./src/volcengine.js";
 import {
@@ -748,6 +759,220 @@ app.delete("/api/dictation", async (_request, response, next) => {
     const records = await readDictationRecords();
     await Promise.all(records.map((record) => removeDictationRecordFiles(record)));
     await writeDictationRecords([]);
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/vocabulary/topics", async (_request, response, next) => {
+  try {
+    const [bank, records] = await Promise.all([loadVocabularyBank(), readVocabularyRecords()]);
+    const summaries = summarizeVocabularyProgress(records);
+    const now = Date.now();
+    const topics = bank.topics.map((topic) => {
+      const topicEntries = bank.entries.filter((entry) => entry.topicId === topic.id && entry.sentence);
+      const practicedCount = topicEntries.filter((entry) => (summaries.get(entry.id)?.practiceCount || 0) > 0).length;
+      const dueCount = topicEntries.filter((entry) => {
+        const nextReviewAt = summaries.get(entry.id)?.nextReviewAt;
+        return nextReviewAt && Date.parse(nextReviewAt) <= now;
+      }).length;
+      const mistakeCount = topicEntries.filter((entry) => {
+        const progress = summaries.get(entry.id);
+        return (
+          progress &&
+          ((progress.latestScore != null && progress.latestScore < 85) ||
+            progress.targetHeard === false ||
+            (progress.errorTags || []).length > 0)
+        );
+      }).length;
+      return {
+        ...topic,
+        practicedCount,
+        dueCount,
+        mistakeCount
+      };
+    });
+
+    response.json({
+      topics,
+      totals: {
+        topics: bank.topics.length,
+        entries: bank.entries.length,
+        sentenceEntries: bank.entries.filter((entry) => entry.sentence).length,
+        records: records.length
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/vocabulary/queue", async (request, response, next) => {
+  try {
+    const records = await readVocabularyRecords();
+    const entries = await buildVocabularyQueue({
+      topicId: request.query.topicId,
+      mode: request.query.mode,
+      limit: request.query.limit,
+      records
+    });
+    response.json({ entries });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/vocabulary/history", async (_request, response, next) => {
+  try {
+    response.json(await readVocabularyRecords());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/vocabulary/dictation", async (request, response, next) => {
+  try {
+    validateCredentials();
+
+    const entry = await findVocabularyEntry(request.body?.entryId);
+    if (!entry) {
+      return response.status(404).json({ error: "Vocabulary entry not found." });
+    }
+    if (!entry.sentence) {
+      return response.status(400).json({ error: "This vocabulary entry does not have a practice sentence." });
+    }
+
+    let voice;
+    try {
+      voice = resolveVoiceIds([request.body?.voiceId || "uk_female"])[0];
+    } catch (error) {
+      return response.status(400).json({ error: error.message });
+    }
+
+    const speedRatio = clampNumber(request.body?.speedRatio, 0.9, 0.5, 1.5);
+    const volumeRatio = clampNumber(request.body?.volumeRatio, 1, 0.2, 2);
+    const records = await readVocabularyRecords();
+    const existing = records.find(
+      (record) => record.entryId === entry.id && record.voice?.voiceId === voice.id && Number(record.speedRatio) === speedRatio
+    );
+    if (existing) {
+      return response.json(existing);
+    }
+
+    const recordId = crypto.randomUUID();
+    const audioBuffer = await synthesizeSpeech({ text: entry.sentence, voice, speedRatio, volumeRatio });
+    const filename = `${recordId}-vocabulary-${voice.id}.mp3`;
+    await saveAudioObject({
+      category: "audio",
+      localDir: audioDir,
+      filename,
+      buffer: audioBuffer,
+      contentType: "audio/mpeg"
+    });
+
+    const record = {
+      id: recordId,
+      source: "vocabulary",
+      entryId: entry.id,
+      topicId: entry.topicId,
+      topic: entry.topic,
+      word: entry.word,
+      sourceText: entry.sentence,
+      createdAt: new Date().toISOString(),
+      speedRatio,
+      volumeRatio,
+      filename,
+      audioUrl: publicAudioUrl("audio", filename),
+      voice: publicItemFromVoice({ voice, filename, audioUrl: publicAudioUrl("audio", filename) }),
+      vocabulary: publicVocabularyEntry(entry),
+      targetWord: entry.word,
+      targetVariants: entry.variants,
+      attempts: [],
+      ownsAudioFile: true,
+      consecutiveCorrect: 0,
+      stage: "new",
+      errorTags: []
+    };
+
+    await addVocabularyRecord(record);
+    response.status(201).json(record);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/vocabulary/dictation/:id/check", async (request, response, next) => {
+  try {
+    const records = await readVocabularyRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Vocabulary dictation record not found." });
+    }
+
+    const userText = String(request.body?.userText ?? "").trim();
+    if (!userText) {
+      return response.status(400).json({ error: "Type what you heard before checking the answer." });
+    }
+    if (userText.length > maxDictationTextLength) {
+      return response.status(400).json({ error: `Your answer is too long. Keep it under ${maxDictationTextLength} characters.` });
+    }
+
+    const entry = (await findVocabularyEntry(record.entryId)) || record.vocabulary;
+    const result = compareDictation(record.sourceText, userText);
+    const vocabularyResult = evaluateVocabularyAttempt({
+      entry,
+      result,
+      userText,
+      previousRecord: record
+    });
+    const attempt = {
+      id: crypto.randomUUID(),
+      userText,
+      createdAt: new Date().toISOString(),
+      ...result,
+      ...vocabularyResult
+    };
+
+    record.attempts = [attempt, ...(record.attempts ?? [])].slice(0, 20);
+    record.latestScore = attempt.score;
+    record.bestScore = Math.max(record.bestScore || 0, attempt.score);
+    record.targetHeard = attempt.targetHeard;
+    record.heardVariant = attempt.heardVariant;
+    record.errorTags = attempt.errorTags;
+    record.consecutiveCorrect = attempt.consecutiveCorrect;
+    record.stage = attempt.stage;
+    record.nextReviewAt = attempt.nextReviewAt;
+    record.lastAttemptAt = attempt.createdAt;
+
+    await writeVocabularyRecords(records);
+    response.json({ record, attempt });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/vocabulary/dictation/:id", async (request, response, next) => {
+  try {
+    const records = await readVocabularyRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Vocabulary dictation record not found." });
+    }
+
+    await removeDictationRecordFiles(record);
+    await writeVocabularyRecords(records.filter((item) => item.id !== record.id));
+    response.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/vocabulary/history", async (_request, response, next) => {
+  try {
+    const records = await readVocabularyRecords();
+    await Promise.all(records.map((record) => removeDictationRecordFiles(record)));
+    await writeVocabularyRecords([]);
     response.status(204).end();
   } catch (error) {
     next(error);

@@ -7,4 +7,5 @@ data/history.json
 data/speaking-history.json
 data/dictation-history.json
 data/voice-notes-history.json
+data/vocabulary-history.json
 .DS_Store

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vocabulary Dictation</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell dictation-shell">
+      <section class="composer" aria-labelledby="vocabulary-title">
+        <div class="title-block">
+          <p class="eyebrow">IELTS Vocabulary</p>
+          <h1 id="vocabulary-title">Vocabulary Dictation</h1>
+        </div>
+        <nav class="mode-tabs" aria-label="Practice modes">
+          <a class="mode-tab" href="/">TTS comparison</a>
+          <a class="mode-tab" href="/speaking.html">Speaking recording</a>
+          <a class="mode-tab" href="/voice-notes.html">Voice notes</a>
+          <a class="mode-tab" href="/dictation.html">Dictation</a>
+          <a class="mode-tab is-active" href="/vocabulary.html">Vocabulary</a>
+          <form class="logout-form" action="/logout" method="post">
+            <button class="mode-tab lock-tab" type="submit">Lock</button>
+          </form>
+        </nav>
+
+        <form id="vocabulary-form" class="tts-form">
+          <label class="field-label" for="vocabulary-topic">Topic</label>
+          <select id="vocabulary-topic" name="topicId"></select>
+
+          <label class="field-label" for="vocabulary-mode">Queue</label>
+          <select id="vocabulary-mode" name="mode">
+            <option value="new" selected>New words</option>
+            <option value="review">Due review</option>
+            <option value="mistakes">Mistakes</option>
+          </select>
+
+          <label class="field-label" for="vocabulary-limit">Batch size</label>
+          <input id="vocabulary-limit" name="limit" type="number" min="5" max="30" step="1" value="15" />
+
+          <label class="field-label" for="vocabulary-voice">Voice</label>
+          <select id="vocabulary-voice" name="voiceId">
+            <option value="uk_female" selected>UK Female</option>
+            <option value="uk_male">UK Male</option>
+            <option value="us_female">US Female</option>
+            <option value="us_male">US Male</option>
+            <option value="au_male">AU Male</option>
+            <option value="en_expressive_female">Expressive Female</option>
+          </select>
+
+          <div class="slider-row">
+            <label for="vocabulary-speed">Speed <span id="vocabulary-speed-value">0.90x</span></label>
+            <input id="vocabulary-speed" name="speed" type="range" min="0.5" max="1.2" step="0.05" value="0.9" />
+          </div>
+
+          <label class="voice-note-toggle">
+            <input id="show-definition" type="checkbox" checked />
+            <span>Show Chinese clue</span>
+          </label>
+
+          <button type="submit" id="load-vocabulary" class="primary-button">Load practice queue</button>
+        </form>
+      </section>
+
+      <section class="workspace" aria-live="polite">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Theme warm-up</p>
+            <h2>Topic audio</h2>
+          </div>
+        </div>
+        <div id="vocabulary-topic-panel" class="topic-panel empty-state">Choose a topic to begin.</div>
+        <div id="vocabulary-status" class="status"></div>
+        <div id="vocabulary-current" class="dictation-current empty-state">Start a vocabulary item to generate dictation audio.</div>
+
+        <div class="history-header">
+          <div>
+            <p class="eyebrow">Practice queue</p>
+            <h2>Words for this session</h2>
+          </div>
+          <div class="history-actions">
+            <button type="button" id="start-first-vocabulary" class="ghost-button">Start first</button>
+          </div>
+        </div>
+        <div id="vocabulary-queue" class="vocabulary-grid empty-state">No queue loaded yet.</div>
+
+        <div class="history-header">
+          <div>
+            <p class="eyebrow">Review archive</p>
+            <h2>Vocabulary history</h2>
+          </div>
+          <div class="history-actions">
+            <span id="vocabulary-page-status" class="page-status"></span>
+            <button type="button" id="vocabulary-prev" class="ghost-button">Prev</button>
+            <button type="button" id="vocabulary-next" class="ghost-button">Next</button>
+            <button type="button" id="clear-vocabulary" class="ghost-button">Clear</button>
+          </div>
+        </div>
+        <div class="history-filters compact-history-filters" aria-label="Vocabulary history filters">
+          <label class="filter-field" for="vocabulary-search">
+            <span>Search</span>
+            <input id="vocabulary-search" type="search" placeholder="Word, topic, sentence, answer" />
+          </label>
+          <label class="filter-field" for="vocabulary-error">
+            <span>Error</span>
+            <select id="vocabulary-error">
+              <option value="">All</option>
+              <option value="target_word_missed">Target missed</option>
+              <option value="spelling">Spelling</option>
+              <option value="function_words">Function words</option>
+              <option value="similar_confusion">Similar word</option>
+            </select>
+          </label>
+          <button type="button" id="vocabulary-reset" class="ghost-button">Reset</button>
+        </div>
+        <div id="vocabulary-filter-status" class="filter-status"></div>
+        <div id="vocabulary-history" class="history-list empty-state">No vocabulary dictation records yet.</div>
+      </section>
+    </main>
+
+    <script src="/vocabulary.js" type="module"></script>
+  </body>
+</html>
