@@ -302,3 +302,76 @@ export async function reviewDictationAttempt({ sourceText, userText, determinist
   const content = payload.choices?.[0]?.message?.content;
   return extractJsonObject(content);
 }
+
+export async function generateDictationParaphrases({ sourceText, context = {} }) {
+  validateDeepseekCredentials();
+
+  const response = await fetch(deepseekApiUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: deepseekModel,
+      temperature: 0.35,
+      max_tokens: 1800,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You are an IELTS Listening paraphrase coach.",
+            "Generate same-meaning sentences that use different wording from the original.",
+            "Preserve the factual meaning, tense, numbers, names, and relationships unless changing them is explicitly needed for natural wording.",
+            "Focus on replacements that IELTS listening commonly tests: noun phrases, verbs, adjectives, cause/effect, time/place expressions, and clause structure.",
+            "Do not make the paraphrases harder just by using rare academic words.",
+            "Return strict JSON with no markdown."
+          ].join(" ")
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            task: "Create paraphrase-linked practice sentences for this dictation item.",
+            sourceSentence: sourceText,
+            learningContext: context,
+            requiredJsonShape: {
+              sourceSentence: "the original sentence",
+              paraphrases: [
+                {
+                  sentence: "same meaning, different words",
+                  difficulty: "easy / medium / hard",
+                  keyReplacements: [
+                    {
+                      original: "word or phrase from the original",
+                      replacement: "different word or phrase in the paraphrase",
+                      note: "why the meaning is similar"
+                    }
+                  ],
+                  listeningTrap: "what the learner might miss or confuse"
+                }
+              ],
+              miniDrill: "one short instruction for practicing these paraphrases"
+            },
+            outputPolicy: [
+              "Return exactly 4 paraphrases.",
+              "Each paraphrase should be one complete sentence.",
+              "Each paraphrase must include at least 2 keyReplacements.",
+              "At least one paraphrase should preserve a simple spoken style.",
+              "At least one paraphrase should sound like an IELTS listening script."
+            ]
+          })
+        }
+      ]
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload.error?.message || payload.message || `DeepSeek request failed with ${response.status}.`;
+    throw new Error(message);
+  }
+
+  const content = payload.choices?.[0]?.message?.content;
+  return extractJsonObject(content);
+}

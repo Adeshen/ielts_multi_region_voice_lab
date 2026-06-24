@@ -222,6 +222,50 @@ function renderDiff(operations = []) {
   `;
 }
 
+function renderSimilarExpressions(similarExpressions) {
+  if (!similarExpressions?.paraphrases?.length) {
+    return "";
+  }
+
+  const paraphraseItems = similarExpressions.paraphrases
+    .map((item) => {
+      const replacements = (item.keyReplacements ?? [])
+        .map(
+          (replacement) => `
+            <li>
+              <strong>${escapeHtml(replacement.original ?? "")} -> ${escapeHtml(replacement.replacement ?? "")}</strong>
+              <span>${escapeHtml(replacement.note ?? "")}</span>
+            </li>
+          `
+        )
+        .join("");
+      return `
+        <article class="paraphrase-card">
+          <div class="dictation-score-row">
+            <span>${escapeHtml(item.difficulty ?? "practice")}</span>
+            ${item.listeningTrap ? `<span>${escapeHtml(item.listeningTrap)}</span>` : ""}
+          </div>
+          <p>${escapeHtml(item.sentence ?? "")}</p>
+          ${replacements ? `<ul class="dictation-mistakes">${replacements}</ul>` : ""}
+        </article>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="paraphrase-panel">
+      <div class="history-title-row">
+        <div>
+          <h4>Same meaning, different words</h4>
+          ${similarExpressions.miniDrill ? `<p class="muted">${escapeHtml(similarExpressions.miniDrill)}</p>` : ""}
+        </div>
+        <span class="page-status">${escapeHtml(similarExpressions.model ?? "DeepSeek")}</span>
+      </div>
+      <div class="paraphrase-grid">${paraphraseItems}</div>
+    </div>
+  `;
+}
+
 function renderAttemptResult(attempt, record) {
   if (!attempt) {
     return "";
@@ -246,6 +290,12 @@ function renderAttemptResult(attempt, record) {
           <p>${escapeHtml(record.sentenceText || record.sourceText)}</p>
         </div>
       </div>
+      <button
+        type="button"
+        class="ghost-button compact-button"
+        data-paraphrase-vocabulary="${escapeHtml(record.id)}"
+      >${record.similarExpressions ? "Refresh similar expressions" : "Similar expressions"}</button>
+      ${renderSimilarExpressions(record.similarExpressions)}
     </div>
   `;
 }
@@ -507,6 +557,26 @@ document.addEventListener("click", async (event) => {
     }
     renderCurrent();
     renderHistory();
+    return;
+  }
+
+  const paraphraseButton = event.target.closest("[data-paraphrase-vocabulary]");
+  if (paraphraseButton) {
+    paraphraseButton.disabled = true;
+    paraphraseButton.textContent = "Generating...";
+    try {
+      const payload = await apiFetch(`/api/vocabulary/dictation/${paraphraseButton.dataset.paraphraseVocabulary}/paraphrases`, {
+        method: "POST"
+      });
+      activeRecord = payload.record;
+      expandedHistoryRecords.add(paraphraseButton.dataset.paraphraseVocabulary);
+      await loadHistory();
+      setStatus("Similar expressions are ready.");
+    } catch (error) {
+      paraphraseButton.disabled = false;
+      paraphraseButton.textContent = "Similar expressions";
+      setStatus(error.message, "error");
+    }
     return;
   }
 

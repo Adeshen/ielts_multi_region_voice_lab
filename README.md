@@ -6,8 +6,8 @@
 
 - 一句话生成多种英语音色，适合对比美式、英式、澳洲等发音差异。
 - 支持网页内播放 MP3 音频。
-- 支持 Dictation 听写模式：可生成新听写音频，也可直接复用 Audio comparison 历史音频；输入答案后自动评分和标出错词，并可选用 DeepSeek 做更灵活的 AI 复核。
-- 支持 Vocabulary Dictation 单词句子听写：从 `data/vocabulary.txt` 读取主题词表，用主题音频预热，并复用每个单词 MP3 里的例句做听写，记录目标词命中率、错因和复习日期。
+- 支持 Dictation 听写模式：可生成新听写音频，也可直接复用 Audio comparison 历史音频；输入答案后自动评分和标出错词，并可选用 DeepSeek 做更灵活的 AI 复核和同义替换训练。
+- 支持 Vocabulary Dictation 单词句子听写：从 `data/vocabulary.txt` 读取主题词表，用主题音频预热，并复用每个单词 MP3 里的例句做听写，记录目标词命中率、错因、同义改写句和复习日期。
 - 支持在历史记录里直接录制自己的朗读，并和生成音频对比播放。
 - 支持单独的口语录音页面，可以自己输入 IELTS 题目/文段，并在同一个题目下保存多次回答录音。
 - 支持纯口语记录页面，可以自由录音、ASR 转写，并用 DeepSeek 生成更自然的口语表达和高级词汇建议。
@@ -187,6 +187,9 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 
 - **DeepSeek 听写复核**
   Dictation 的基础评分使用本地程序，速度快且不消耗 LLM。每次听写尝试也可以点击 AI review，由 DeepSeek 复核原句和学习者答案，更灵活地区分可接受拼写/词形变化、真正影响理解的错误、可能的弱读/连读/尾音问题，并给出下一步训练建议。
+
+- **同义替换训练**
+  Dictation 和 Vocabulary Dictation 都支持点击 Similar expressions。后端调用 DeepSeek 为原句生成 4 条同义改写句，保存到对应历史记录，并列出 key replacements 和 listening trap，帮助训练 IELTS 听力常见的同义替换识别。该功能按需触发，不会在每次基础评分时自动消耗 LLM 额度。
 
 - **Vocabulary Dictation 单词句子听写**
   新增 `/vocabulary.html`。后端解析 `data/vocabulary.txt`，按主题生成新词、复习和错题队列。主题面板播放 GitHub 公开词汇主题 MP3，真正计分的训练单元复用每个单词 MP3 中自带的例句音频，不调用火山 TTS。提交答案后会记录目标词是否听出、拼写/功能词/相近词等错因、连续高分次数和下一次复习时间。
@@ -392,6 +395,10 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 
 对某次听写尝试调用 DeepSeek 做 AI 复核。基础 `check` 不会自动调用 DeepSeek，只有点击 AI review 时才会消耗 LLM 额度。
 
+### `POST /api/dictation/:id/paraphrases`
+
+对某条听写原句调用 DeepSeek 生成同义改写训练，返回并保存 4 条 same-meaning sentences、key replacements 和 listening trap。
+
 ### `POST /api/dictation/from-history`
 
 把 TTS 历史记录里的某条已生成音频复用为听写训练，不重新调用 TTS，也不会在删除听写记录时删除原始 TTS 音频。
@@ -445,6 +452,10 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 ### `POST /api/vocabulary/dictation/:id/check`
 
 提交单词句子听写答案，返回词级 diff、目标词命中、错因标签、连续正确次数和下一次复习时间。
+
+### `POST /api/vocabulary/dictation/:id/paraphrases`
+
+对某条单词例句调用 DeepSeek 生成同义改写训练，帮助学习 replacement with the same meaning。
 
 ### `GET /api/vocabulary/history`
 

@@ -184,6 +184,50 @@ function renderAiReview(aiReview) {
   `;
 }
 
+function renderSimilarExpressions(similarExpressions) {
+  if (!similarExpressions?.paraphrases?.length) {
+    return "";
+  }
+
+  const paraphraseItems = similarExpressions.paraphrases
+    .map((item) => {
+      const replacements = (item.keyReplacements ?? [])
+        .map(
+          (replacement) => `
+            <li>
+              <strong>${escapeHtml(replacement.original ?? "")} → ${escapeHtml(replacement.replacement ?? "")}</strong>
+              <span>${escapeHtml(replacement.note ?? "")}</span>
+            </li>
+          `
+        )
+        .join("");
+      return `
+        <article class="paraphrase-card">
+          <div class="dictation-score-row">
+            <span>${escapeHtml(item.difficulty ?? "practice")}</span>
+            ${item.listeningTrap ? `<span>${escapeHtml(item.listeningTrap)}</span>` : ""}
+          </div>
+          <p>${escapeHtml(item.sentence ?? "")}</p>
+          ${replacements ? `<ul class="dictation-mistakes">${replacements}</ul>` : ""}
+        </article>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="paraphrase-panel">
+      <div class="history-title-row">
+        <div>
+          <h4>Same meaning, different words</h4>
+          ${similarExpressions.miniDrill ? `<p class="muted">${escapeHtml(similarExpressions.miniDrill)}</p>` : ""}
+        </div>
+        <span class="page-status">${escapeHtml(similarExpressions.model ?? "DeepSeek")}</span>
+      </div>
+      <div class="paraphrase-grid">${paraphraseItems}</div>
+    </div>
+  `;
+}
+
 function renderMistakes(attempt, record) {
   if (!attempt) {
     return "";
@@ -243,7 +287,13 @@ function renderMistakes(attempt, record) {
         data-review-dictation="${escapeHtml(record.id)}"
         data-attempt-id="${escapeHtml(attempt.id)}"
       >${attempt.aiReview ? "Run AI review again" : "AI review"}</button>
+      <button
+        type="button"
+        class="ghost-button compact-button"
+        data-paraphrase-dictation="${escapeHtml(record.id)}"
+      >${record.similarExpressions ? "Refresh similar expressions" : "Similar expressions"}</button>
       ${renderAiReview(attempt.aiReview)}
+      ${renderSimilarExpressions(record.similarExpressions)}
     </div>
   `;
 }
@@ -515,6 +565,26 @@ document.addEventListener("click", async (event) => {
     } catch (error) {
       reviewButton.disabled = false;
       reviewButton.textContent = "AI review";
+      setStatus(error.message, "error");
+    }
+    return;
+  }
+
+  const paraphraseButton = event.target.closest("[data-paraphrase-dictation]");
+  if (paraphraseButton) {
+    paraphraseButton.disabled = true;
+    paraphraseButton.textContent = "Generating...";
+    try {
+      const payload = await apiFetch(`/api/dictation/${paraphraseButton.dataset.paraphraseDictation}/paraphrases`, {
+        method: "POST"
+      });
+      activeRecord = payload.record;
+      expandedHistoryRecords.add(paraphraseButton.dataset.paraphraseDictation);
+      await loadRecords();
+      setStatus("Similar expressions are ready.");
+    } catch (error) {
+      paraphraseButton.disabled = false;
+      paraphraseButton.textContent = "Similar expressions";
       setStatus(error.message, "error");
     }
     return;

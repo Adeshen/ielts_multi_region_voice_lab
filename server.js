@@ -29,7 +29,12 @@ import {
   writeVoiceNoteRecords
 } from "./src/storage.js";
 import { transcribeAudioFile } from "./src/volcengineAsr.js";
-import { analyzeSpeakingAnswer, improveVoiceNoteExpression, reviewDictationAttempt } from "./src/deepseek.js";
+import {
+  analyzeSpeakingAnswer,
+  generateDictationParaphrases,
+  improveVoiceNoteExpression,
+  reviewDictationAttempt
+} from "./src/deepseek.js";
 import { compareDictation } from "./src/dictation.js";
 import { convertWavToMp3 } from "./src/audioTranscode.js";
 import {
@@ -738,6 +743,38 @@ app.post("/api/dictation/:id/attempts/:attemptId/review", async (request, respon
   }
 });
 
+app.post("/api/dictation/:id/paraphrases", async (request, response, next) => {
+  try {
+    const records = await readDictationRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Dictation record not found." });
+    }
+
+    const latestAttempt = (record.attempts ?? [])[0] ?? null;
+    const similarExpressions = await generateDictationParaphrases({
+      sourceText: record.sourceText,
+      context: {
+        mode: "sentence-dictation",
+        voice: record.voice?.shortLabel || record.voice?.label || "",
+        latestScore: latestAttempt?.score ?? null,
+        latestMistakes: (latestAttempt?.mistakes ?? []).slice(0, 8)
+      }
+    });
+
+    record.similarExpressions = {
+      ...similarExpressions,
+      provider: "deepseek",
+      model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+      createdAt: new Date().toISOString()
+    };
+    await writeDictationRecords(records);
+    response.json({ record, similarExpressions: record.similarExpressions });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.delete("/api/dictation/:id", async (request, response, next) => {
   try {
     const records = await readDictationRecords();
@@ -981,6 +1018,41 @@ app.post("/api/vocabulary/dictation/:id/check", async (request, response, next) 
 
     await writeVocabularyRecords(records);
     response.json({ record, attempt });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/vocabulary/dictation/:id/paraphrases", async (request, response, next) => {
+  try {
+    const records = await readVocabularyRecords();
+    const record = records.find((item) => item.id === request.params.id);
+    if (!record) {
+      return response.status(404).json({ error: "Vocabulary dictation record not found." });
+    }
+
+    const latestAttempt = (record.attempts ?? [])[0] ?? null;
+    const sourceText = record.sentenceText || record.sourceText;
+    const similarExpressions = await generateDictationParaphrases({
+      sourceText,
+      context: {
+        mode: "vocabulary-dictation",
+        topic: record.topic,
+        targetWord: record.word,
+        definition: record.vocabulary?.definition || "",
+        latestScore: latestAttempt?.score ?? null,
+        latestErrorTags: latestAttempt?.errorTags ?? []
+      }
+    });
+
+    record.similarExpressions = {
+      ...similarExpressions,
+      provider: "deepseek",
+      model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+      createdAt: new Date().toISOString()
+    };
+    await writeVocabularyRecords(records);
+    response.json({ record, similarExpressions: record.similarExpressions });
   } catch (error) {
     next(error);
   }
