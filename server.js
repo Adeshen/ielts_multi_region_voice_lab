@@ -833,63 +833,85 @@ app.get("/api/vocabulary/history", async (_request, response, next) => {
 
 app.post("/api/vocabulary/dictation", async (request, response, next) => {
   try {
-    validateCredentials();
-
     const entry = await findVocabularyEntry(request.body?.entryId);
     if (!entry) {
       return response.status(404).json({ error: "Vocabulary entry not found." });
     }
-    if (!entry.sentence) {
-      return response.status(400).json({ error: "This vocabulary entry does not have a practice sentence." });
+    if (!entry.wordAudioUrl) {
+      return response.status(400).json({ error: "This vocabulary entry does not have reusable word audio." });
     }
 
-    let voice;
-    try {
-      voice = resolveVoiceIds([request.body?.voiceId || "uk_female"])[0];
-    } catch (error) {
-      return response.status(400).json({ error: error.message });
-    }
-
-    const speedRatio = clampNumber(request.body?.speedRatio, 0.9, 0.5, 1.5);
-    const volumeRatio = clampNumber(request.body?.volumeRatio, 1, 0.2, 2);
     const records = await readVocabularyRecords();
     const existing = records.find(
-      (record) => record.entryId === entry.id && record.voice?.voiceId === voice.id && Number(record.speedRatio) === speedRatio
+      (record) => record.entryId === entry.id && (record.audioSource === "github-word-audio" || record.source === "vocabulary")
     );
     if (existing) {
+      let changed = false;
+      if (existing.ownsAudioFile !== false && typeof existing.filename === "string" && existing.filename && !existing.filename.includes("..")) {
+        await deleteAudioObject({ category: "audio", localDir: audioDir, filename: existing.filename }).catch((error) => {
+          console.warn(`Could not remove old generated vocabulary audio ${existing.filename}:`, error.message);
+        });
+      }
+      if (entry.sentence && existing.sourceText !== entry.sentence) {
+        existing.sourceText = entry.sentence;
+        changed = true;
+      }
+      if (existing.audioSource !== "github-word-audio") {
+        existing.audioSource = "github-word-audio";
+        changed = true;
+      }
+      if (existing.sentenceText !== entry.sentence) {
+        existing.sentenceText = entry.sentence;
+        changed = true;
+      }
+      if (existing.audioUrl !== entry.wordAudioUrl || existing.ownsAudioFile !== false) {
+        existing.audioUrl = entry.wordAudioUrl;
+        existing.filename = "";
+        existing.ownsAudioFile = false;
+        changed = true;
+      }
+      if (existing.voice?.voiceId !== "github_word_audio") {
+        existing.voice = {
+          voiceId: "github_word_audio",
+          label: "Existing vocabulary audio",
+          shortLabel: "GitHub audio",
+          region: "Vocabulary source",
+          gender: ""
+        };
+        changed = true;
+      }
+      if (changed) {
+        await writeVocabularyRecords(records);
+      }
       return response.json(existing);
     }
 
     const recordId = crypto.randomUUID();
-    const audioBuffer = await synthesizeSpeech({ text: entry.sentence, voice, speedRatio, volumeRatio });
-    const filename = `${recordId}-vocabulary-${voice.id}.mp3`;
-    await saveAudioObject({
-      category: "audio",
-      localDir: audioDir,
-      filename,
-      buffer: audioBuffer,
-      contentType: "audio/mpeg"
-    });
-
     const record = {
       id: recordId,
       source: "vocabulary",
+      audioSource: "github-word-audio",
       entryId: entry.id,
       topicId: entry.topicId,
       topic: entry.topic,
       word: entry.word,
-      sourceText: entry.sentence,
+      sourceText: entry.sentence || entry.variants[0] || entry.word,
+      sentenceText: entry.sentence,
       createdAt: new Date().toISOString(),
-      speedRatio,
-      volumeRatio,
-      filename,
-      audioUrl: publicAudioUrl("audio", filename),
-      voice: publicItemFromVoice({ voice, filename, audioUrl: publicAudioUrl("audio", filename) }),
+      filename: "",
+      audioUrl: entry.wordAudioUrl,
+      voice: {
+        voiceId: "github_word_audio",
+        label: "Existing vocabulary audio",
+        shortLabel: "GitHub audio",
+        region: "Vocabulary source",
+        gender: ""
+      },
       vocabulary: publicVocabularyEntry(entry),
       targetWord: entry.word,
       targetVariants: entry.variants,
       attempts: [],
-      ownsAudioFile: true,
+      ownsAudioFile: false,
       consecutiveCorrect: 0,
       stage: "new",
       errorTags: []
@@ -919,7 +941,19 @@ app.post("/api/vocabulary/dictation/:id/check", async (request, response, next) 
     }
 
     const entry = (await findVocabularyEntry(record.entryId)) || record.vocabulary;
-    const result = compareDictation(record.sourceText, userText);
+    const candidateTexts = [record.sourceText];
+    const leadWord = record.targetVariants?.[0] || record.word;
+    if (record.audioSource === "github-word-audio" && record.sentenceText && leadWord) {
+      candidateTexts.push(`${leadWord} ${record.sentenceText}`);
+    }
+    const result = candidateTexts
+      .filter(Boolean)
+      .map((candidateText) => ({
+        sourceText: candidateText,
+        result: compareDictation(candidateText, userText)
+      }))
+      .sort((left, right) => right.result.score - left.result.score || left.result.expectedWordCount - right.result.expectedWordCount)[0]
+      .result;
     const vocabularyResult = evaluateVocabularyAttempt({
       entry,
       result,

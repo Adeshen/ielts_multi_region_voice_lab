@@ -1221,6 +1221,18 @@ input[type="range"] {
   font-weight: 800;
 }
 
+.source-note {
+  margin: 0;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 118, 110, 0.06);
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
 @keyframes recording-pulse {
   0% {
     opacity: 0.55;

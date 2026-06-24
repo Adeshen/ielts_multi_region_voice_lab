@@ -2,9 +2,6 @@ const form = document.querySelector("#vocabulary-form");
 const topicSelect = document.querySelector("#vocabulary-topic");
 const modeSelect = document.querySelector("#vocabulary-mode");
 const limitInput = document.querySelector("#vocabulary-limit");
-const voiceSelect = document.querySelector("#vocabulary-voice");
-const speedInput = document.querySelector("#vocabulary-speed");
-const speedValue = document.querySelector("#vocabulary-speed-value");
 const showDefinitionInput = document.querySelector("#show-definition");
 const loadButton = document.querySelector("#load-vocabulary");
 const startFirstButton = document.querySelector("#start-first-vocabulary");
@@ -62,10 +59,6 @@ function formatDate(value) {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
-}
-
-function updateSpeedLabel() {
-  speedValue.textContent = `${Number(speedInput.value).toFixed(2)}x`;
 }
 
 async function apiFetch(url, options) {
@@ -250,7 +243,7 @@ function renderAttemptResult(attempt, record) {
         </div>
         <div>
           <h4>Sentence</h4>
-          <p>${escapeHtml(record.sourceText)}</p>
+          <p>${escapeHtml(record.sentenceText || record.sourceText)}</p>
         </div>
       </div>
     </div>
@@ -271,7 +264,7 @@ function renderPracticeCard(record, { current = false } = {}) {
         <div>
           <p class="eyebrow">${escapeHtml(record.topic)} · ${escapeHtml(record.voice?.shortLabel || "Voice")}</p>
           <h3>${current ? "Target listening" : escapeHtml(record.word)}</h3>
-          <p class="muted">Speed ${escapeHtml(record.speedRatio ?? "-")}x · ${escapeHtml(record.stage || "new")}</p>
+          <p class="muted">${escapeHtml(record.audioSource === "github-word-audio" ? "Reused word MP3" : record.voice?.shortLabel || "Audio")} · ${escapeHtml(record.stage || "new")}</p>
           <div class="recording-compact-meta prompt-attempt-meta">
             <span>${escapeHtml(record.attempts?.length ?? 0)} attempt${record.attempts?.length === 1 ? "" : "s"}</span>
             ${attempt ? `<span>Latest ${escapeHtml(attempt.score)}%</span>` : ""}
@@ -303,7 +296,7 @@ function renderPracticeCard(record, { current = false } = {}) {
                   class="dictation-answer"
                   rows="4"
                   maxlength="1000"
-                  placeholder="Type the full sentence you hear."
+                  placeholder="Type the full example sentence you hear."
                   required
                 >${escapeHtml(attempt?.userText ?? "")}</textarea>
               </label>
@@ -311,7 +304,7 @@ function renderPracticeCard(record, { current = false } = {}) {
             </form>
             ${
               isRevealed
-                ? `<p class="dictation-source"><strong>${escapeHtml(record.word)}</strong> · ${escapeHtml(record.sourceText)}${
+                ? `<p class="dictation-source"><strong>${escapeHtml(record.word)}</strong> · ${escapeHtml(record.sentenceText || record.sourceText)}${
                     record.vocabulary?.note ? ` · ${escapeHtml(record.vocabulary.note)}` : ""
                   }</p>`
                 : ""
@@ -418,12 +411,7 @@ async function startVocabularyEntry(entryId) {
   const record = await apiFetch("/api/vocabulary/dictation", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      entryId,
-      voiceId: voiceSelect.value,
-      speedRatio: Number(speedInput.value),
-      volumeRatio: 1
-    })
+    body: JSON.stringify({ entryId })
   });
   activeRecord = record;
   await loadHistory();
@@ -559,7 +547,6 @@ topicSelect.addEventListener("change", () => {
 modeSelect.addEventListener("change", () => {
   loadQueue().catch((error) => setStatus(error.message, "error"));
 });
-speedInput.addEventListener("input", updateSpeedLabel);
 showDefinitionInput.addEventListener("change", () => {
   renderCurrent();
 });
@@ -615,7 +602,6 @@ document.addEventListener("keydown", (event) => {
   toggleAudio().catch((error) => setStatus(error.message, "error"));
 });
 
-updateSpeedLabel();
 Promise.all([loadTopics(), loadHistory()])
   .then(loadQueue)
   .catch((error) => setStatus(error.message, "error"));

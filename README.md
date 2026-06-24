@@ -7,7 +7,7 @@
 - 一句话生成多种英语音色，适合对比美式、英式、澳洲等发音差异。
 - 支持网页内播放 MP3 音频。
 - 支持 Dictation 听写模式：可生成新听写音频，也可直接复用 Audio comparison 历史音频；输入答案后自动评分和标出错词，并可选用 DeepSeek 做更灵活的 AI 复核。
-- 支持 Vocabulary Dictation 单词句子听写：从 `data/vocabulary.txt` 读取主题词表，用主题音频预热，再用例句生成单句听写，记录目标词命中率、错因和复习日期。
+- 支持 Vocabulary Dictation 单词句子听写：从 `data/vocabulary.txt` 读取主题词表，用主题音频预热，并复用每个单词 MP3 里的例句做听写，记录目标词命中率、错因和复习日期。
 - 支持在历史记录里直接录制自己的朗读，并和生成音频对比播放。
 - 支持单独的口语录音页面，可以自己输入 IELTS 题目/文段，并在同一个题目下保存多次回答录音。
 - 支持纯口语记录页面，可以自由录音、ASR 转写，并用 DeepSeek 生成更自然的口语表达和高级词汇建议。
@@ -23,7 +23,7 @@
 - 口语题目和录音分别保存在本地 `data/speaking-history.json`、`data/speaking-recordings/`。
 - 纯口语记录保存在本地 `data/voice-notes-history.json`，录音文件复用 `data/speaking-recordings/`。
 - 听写记录保存在本地 `data/dictation-history.json`，听写音频复用 `data/audio/`。
-- 单词听写记录保存在本地 `data/vocabulary-history.json`，词表保存在 `data/vocabulary.txt`，音频复用 `data/audio/`。
+- 单词听写记录保存在本地 `data/vocabulary-history.json`，词表保存在 `data/vocabulary.txt`，练习音频复用 GitHub vocabulary audio。
 - 历史元数据保存在本地 `data/history.json`。
 - 支持配置火山引擎 TOS 对象存储；配置后新生成的 TTS、听写音频和录音文件会写入 TOS 桶，旧本地音频仍可回退播放。
 - 火山引擎凭证只放在 `.env`，不会暴露给前端页面。
@@ -189,7 +189,7 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
   Dictation 的基础评分使用本地程序，速度快且不消耗 LLM。每次听写尝试也可以点击 AI review，由 DeepSeek 复核原句和学习者答案，更灵活地区分可接受拼写/词形变化、真正影响理解的错误、可能的弱读/连读/尾音问题，并给出下一步训练建议。
 
 - **Vocabulary Dictation 单词句子听写**
-  新增 `/vocabulary.html`。后端解析 `data/vocabulary.txt`，按主题生成新词、复习和错题队列。主题面板播放 GitHub 公开词汇主题 MP3，真正计分的训练单元使用词表例句生成 TTS 单句听写。提交答案后会记录目标词是否听出、拼写/功能词/相近词等错因、连续高分次数和下一次复习时间。
+  新增 `/vocabulary.html`。后端解析 `data/vocabulary.txt`，按主题生成新词、复习和错题队列。主题面板播放 GitHub 公开词汇主题 MP3，真正计分的训练单元复用每个单词 MP3 中自带的例句音频，不调用火山 TTS。提交答案后会记录目标词是否听出、拼写/功能词/相近词等错因、连续高分次数和下一次复习时间。
 
 - **浏览器麦克风录音**
   前端支持录制学习者朗读，TTS 跟读录音保存到 `data/recordings/`，口语模式录音保存到 `data/speaking-recordings/`，网页可直接播放，便于和 TTS 音频对比。
@@ -429,7 +429,7 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 
 ### `POST /api/vocabulary/dictation`
 
-为某个词条的例句生成或复用一条单词听写记录。
+为某个词条创建或复用一条单词听写记录。练习音频直接使用 GitHub vocabulary audio 中该单词 MP3，不调用火山 TTS。
 
 请求示例：
 
@@ -452,11 +452,11 @@ TOS_ACCESS_KEY_SECRET=your_secret_access_key_from_volcengine_iam
 
 ### `DELETE /api/vocabulary/dictation/:id`
 
-删除一条单词句子听写记录，并删除对应 MP3 文件。
+删除一条单词句子听写记录。外部 GitHub 音频不会被删除。
 
 ### `DELETE /api/vocabulary/history`
 
-清空全部单词句子听写记录，并删除对应 MP3 文件。
+清空全部单词句子听写记录。外部 GitHub 音频不会被删除。
 
 ### `GET /api/speaking`
 
